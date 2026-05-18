@@ -272,12 +272,47 @@ function CircleProgress({ value, max, size = 80, stroke = 7, color = COLORS.acce
   );
 }
 
+// ─── AUTH STORE (in-memory, persists within session) ─────────────────────────
+const authDB = { users: [] };
+
+function authRegister(name, email, pass) {
+  if (!name.trim() || !email.trim() || !pass.trim()) return { ok: false, err: "Preencha todos os campos." };
+  if (!/\S+@\S+\.\S+/.test(email)) return { ok: false, err: "E-mail inválido." };
+  if (pass.length < 6) return { ok: false, err: "Senha deve ter ao menos 6 caracteres." };
+  if (authDB.users.find(u => u.email.toLowerCase() === email.toLowerCase()))
+    return { ok: false, err: "Este e-mail já está cadastrado." };
+  const user = { name: name.trim(), email: email.trim().toLowerCase(), pass };
+  authDB.users.push(user);
+  return { ok: true, user };
+}
+
+function authLogin(email, pass) {
+  if (!email.trim() || !pass.trim()) return { ok: false, err: "Preencha e-mail e senha." };
+  const user = authDB.users.find(u => u.email === email.trim().toLowerCase() && u.pass === pass);
+  if (!user) return { ok: false, err: "E-mail ou senha incorretos." };
+  return { ok: true, user };
+}
+
 // ─── SCREENS ────────────────────────────────────────────────────────────────
 
-function LoginScreen({ onNav }) {
+function LoginScreen({ onLogin, onNav }) {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [showPass, setShowPass] = useState(false);
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  function handleLogin() {
+    setErr("");
+    setLoading(true);
+    setTimeout(() => {
+      const res = authLogin(email, pass);
+      setLoading(false);
+      if (res.ok) onLogin(res.user);
+      else setErr(res.err);
+    }, 600);
+  }
+
   return (
     <div style={{ ...styles.screen, display: "flex", flexDirection: "column", justifyContent: "center", padding: "32px 24px", minHeight: "100vh", boxSizing: "border-box" }}>
       <div style={{ textAlign: "center", marginBottom: 40 }}>
@@ -286,37 +321,97 @@ function LoginScreen({ onNav }) {
         <div style={{ fontSize: 22, fontWeight: 700, color: COLORS.text }}>começa aqui.</div>
         <div style={{ width: 40, height: 3, background: COLORS.accent, margin: "12px auto 0", borderRadius: 2 }} />
       </div>
+
       <label style={styles.inputLabel}>E-mail</label>
-      <input style={styles.input} value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" type="email" />
+      <input
+        style={{ ...styles.input, borderColor: err ? COLORS.danger : COLORS.border }}
+        value={email} onChange={e => { setEmail(e.target.value); setErr(""); }}
+        placeholder="seu@email.com" type="email"
+        onKeyDown={e => e.key === "Enter" && handleLogin()}
+      />
+
       <label style={styles.inputLabel}>Senha</label>
       <div style={{ position: "relative", marginBottom: 8 }}>
-        <input style={{ ...styles.input, marginBottom: 0, paddingRight: 44 }} value={pass} onChange={e => setPass(e.target.value)} placeholder="••••••••" type={showPass ? "text" : "password"} />
+        <input
+          style={{ ...styles.input, marginBottom: 0, paddingRight: 44, borderColor: err ? COLORS.danger : COLORS.border }}
+          value={pass} onChange={e => { setPass(e.target.value); setErr(""); }}
+          placeholder="••••••••" type={showPass ? "text" : "password"}
+          onKeyDown={e => e.key === "Enter" && handleLogin()}
+        />
         <button onClick={() => setShowPass(!showPass)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: 18 }}>
           {showPass ? "🙈" : "👁"}
         </button>
       </div>
-      <div style={{ textAlign: "right", marginBottom: 24 }}>
+
+      {err && (
+        <div style={{ background: COLORS.danger + "18", border: `1px solid ${COLORS.danger}55`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: COLORS.danger, display: "flex", alignItems: "center", gap: 8 }}>
+          ⚠ {err}
+        </div>
+      )}
+
+      <div style={{ textAlign: "right", marginBottom: 20 }}>
         <span style={{ fontSize: 13, color: COLORS.textSecondary, cursor: "pointer" }}>Esqueci minha senha</span>
       </div>
-      <button style={styles.btn} onClick={() => onNav("feed")}>ENTRAR</button>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "20px 0" }}>
-        <div style={{ flex: 1, height: 1, background: COLORS.border }} />
-        <span style={{ fontSize: 11, color: COLORS.textMuted, letterSpacing: 2 }}>OU CONECTE-SE COM</span>
-        <div style={{ flex: 1, height: 1, background: COLORS.border }} />
-      </div>
-      <button style={{ ...styles.btnOutline, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-        <span style={{ fontWeight: 900, fontSize: 15 }}>G</span> GOOGLE
+
+      <button
+        style={{ ...styles.btn, opacity: loading ? 0.7 : 1 }}
+        onClick={handleLogin}
+        disabled={loading}
+      >
+        {loading ? "ENTRANDO..." : "ENTRAR"}
       </button>
+
       <div style={{ textAlign: "center", marginTop: 28, fontSize: 14 }}>
         Novo no Vittness?{" "}
         <span onClick={() => onNav("register")} style={{ color: COLORS.accent, fontWeight: 700, cursor: "pointer" }}>Criar conta</span>
       </div>
+
+      {authDB.users.length > 0 && (
+        <div style={{ marginTop: 24, background: COLORS.surface2, borderRadius: 8, padding: "12px 14px", border: `1px solid ${COLORS.border}` }}>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 8 }}>CONTAS CADASTRADAS</div>
+          {authDB.users.map((u, i) => (
+            <div key={i} onClick={() => { setEmail(u.email); setPass(u.pass); setErr(""); }}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i > 0 ? `1px solid ${COLORS.border}` : "none", cursor: "pointer" }}>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: COLORS.accent + "33", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: COLORS.accent }}>
+                {u.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)}
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{u.name}</div>
+                <div style={{ fontSize: 11, color: COLORS.textMuted }}>{u.email}</div>
+              </div>
+              <span style={{ marginLeft: "auto", fontSize: 11, color: COLORS.accent }}>usar →</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function RegisterScreen({ onNav }) {
+function RegisterScreen({ onLogin, onNav }) {
   const [form, setForm] = useState({ name: "", email: "", pass: "", confirm: "" });
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  function handleRegister() {
+    setErr("");
+    if (form.pass !== form.confirm) { setErr("As senhas não coincidem."); return; }
+    setLoading(true);
+    setTimeout(() => {
+      const res = authRegister(form.name, form.email, form.pass);
+      setLoading(false);
+      if (res.ok) onLogin(res.user);
+      else setErr(res.err);
+    }, 700);
+  }
+
+  const fields = [
+    ["NOME COMPLETO", "name", "Atleta de Elite", "text"],
+    ["E-MAIL", "email", "seu@email.com", "email"],
+    ["SENHA", "pass", "mín. 6 caracteres", "password"],
+    ["CONFIRMAR SENHA", "confirm", "repita a senha", "password"],
+  ];
+
   return (
     <div style={{ ...styles.screen, padding: "24px", boxSizing: "border-box" }}>
       <div style={{ textAlign: "center", marginBottom: 32 }}>
@@ -324,21 +419,33 @@ function RegisterScreen({ onNav }) {
         <div style={{ fontSize: 28, fontWeight: 800 }}>Crie sua conta</div>
         <div style={{ color: COLORS.textSecondary, fontSize: 15, marginTop: 6 }}>Comece sua jornada de performance hoje.</div>
       </div>
-      {[["NOME COMPLETO","name","Atleta de Elite","text"],["E-MAIL","email","seu@email.com","email"],["SENHA","pass","••••••••","password"],["CONFIRMAR SENHA","confirm","••••••••","password"]].map(([lbl, key, ph, type]) => (
+
+      {fields.map(([lbl, key, ph, type]) => (
         <div key={key}>
           <label style={styles.inputLabel}>{lbl}</label>
-          <input style={styles.input} placeholder={ph} type={type} value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })} />
+          <input
+            style={{ ...styles.input, borderColor: err && (key === "pass" || key === "confirm") ? COLORS.danger : COLORS.border }}
+            placeholder={ph} type={type}
+            value={form[key]}
+            onChange={e => { setForm({ ...form, [key]: e.target.value }); setErr(""); }}
+          />
         </div>
       ))}
-      <button style={{ ...styles.btn, marginTop: 8 }} onClick={() => onNav("feed")}>CRIAR CONTA</button>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "20px 0" }}>
-        <div style={{ flex: 1, height: 1, background: COLORS.border }} />
-        <span style={{ fontSize: 11, color: COLORS.textMuted, letterSpacing: 2 }}>OU</span>
-        <div style={{ flex: 1, height: 1, background: COLORS.border }} />
-      </div>
-      <button style={{ ...styles.btnOutline, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-        <span style={{ fontWeight: 900, fontSize: 15 }}>G</span> CONTINUAR COM GOOGLE
+
+      {err && (
+        <div style={{ background: COLORS.danger + "18", border: `1px solid ${COLORS.danger}55`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: COLORS.danger, display: "flex", alignItems: "center", gap: 8 }}>
+          ⚠ {err}
+        </div>
+      )}
+
+      <button
+        style={{ ...styles.btn, marginTop: 8, opacity: loading ? 0.7 : 1 }}
+        onClick={handleRegister}
+        disabled={loading}
+      >
+        {loading ? "CRIANDO CONTA..." : "CRIAR CONTA"}
       </button>
+
       <div style={{ textAlign: "center", marginTop: 20, fontSize: 14 }}>
         Já tem uma conta?{" "}
         <span onClick={() => onNav("login")} style={{ color: COLORS.accent, fontWeight: 700, cursor: "pointer" }}>Fazer login</span>
@@ -352,114 +459,111 @@ function RegisterScreen({ onNav }) {
   );
 }
 
-function FeedScreen() {
-  const activities = [
-    { user: "João Silva", type: "CORRIDA MATINAL", dist: "8.52 km", time: "42:15", pace: "4:58/km", likes: 12, comments: 3 },
-    { user: "Maria Santos", type: "CICLISMO DE ESTRADA", dist: "32.4 km", time: "1:12:30", speed: "26.8 km/h", likes: 28, comments: 7 },
-  ];
+function EmptyState({ icon, title, subtitle, btnLabel, onBtn }) {
+  return (
+    <div style={{ textAlign: "center", padding: "32px 24px" }}>
+      <div style={{ fontSize: 48, marginBottom: 16 }}>{icon}</div>
+      <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 8 }}>{title}</div>
+      <div style={{ fontSize: 13, color: COLORS.textMuted, lineHeight: 1.6, marginBottom: 20 }}>{subtitle}</div>
+      {btnLabel && <button style={{ ...styles.btn, maxWidth: 240, margin: "0 auto" }} onClick={onBtn}>{btnLabel}</button>}
+    </div>
+  );
+}
+
+function FeedScreen({ onNav }) {
   return (
     <div style={styles.screen}>
       <div style={{ ...styles.card, background: COLORS.surface }}>
+        <div style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 10 }}>Esta semana</div>
         <div style={{ display: "flex", gap: 24 }}>
-          {[["42.5", "KM TOTAL"], ["3h 45m", "TEMPO"], ["5", "ATIVIDADES"]].map(([v, l]) => (
+          {[["0", "KM TOTAL"], ["0min", "TEMPO"], ["0", "ATIVIDADES"]].map(([v, l]) => (
             <div key={l}>
-              <div style={{ fontSize: 22, fontWeight: 800, color: COLORS.accent }}>{v}</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: COLORS.textMuted }}>{v}</div>
               <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1, textTransform: "uppercase" }}>{l}</div>
             </div>
           ))}
         </div>
       </div>
-      <div style={{ ...styles.row, padding: "4px 16px 0" }}>
-        <div style={styles.sectionTitle}>Feed de Amigos</div>
-        <span style={{ fontSize: 12, color: COLORS.accent, fontWeight: 700, letterSpacing: 1, cursor: "pointer" }}>FILTRAR</span>
+
+      <div style={{ ...styles.card, borderColor: COLORS.accent + "55", background: COLORS.accent + "0d" }}>
+        <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>👋 BEM-VINDO AO VITTNESS</div>
+        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>Comece sua jornada agora</div>
+        <div style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.6, marginBottom: 14 }}>
+          Configure seu perfil, crie sua primeira rotina de treino e deixe a IA personalizar seu plano.
+        </div>
+        <button style={{ ...styles.btn, padding: "10px", fontSize: 12 }} onClick={() => onNav("record")}>⚡ CRIAR MINHA ROTINA</button>
       </div>
-      {activities.map((a, i) => (
-        <div key={i} style={styles.card}>
-          <div style={{ ...styles.row, marginBottom: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 36, height: 36, borderRadius: "50%", background: COLORS.surface3, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: COLORS.accent }}>
-                {a.user.split(" ").map(n => n[0]).join("")}
-              </div>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>{a.user}</div>
-                <div style={{ fontSize: 11, color: COLORS.textMuted, letterSpacing: 1 }}>{a.type}</div>
-              </div>
-            </div>
-            <span style={{ color: COLORS.textMuted, fontSize: 20, cursor: "pointer" }}>···</span>
-          </div>
-          <div style={{ background: COLORS.surface3, borderRadius: 8, height: 120, display: "flex", alignItems: "flex-end", padding: 10, marginBottom: 12, position: "relative", overflow: "hidden" }}>
-            <div style={{ position: "absolute", inset: 0, background: `linear-gradient(135deg, #1a2a1a 0%, #0d1a0d 100%)`, opacity: 0.9 }} />
-            <span style={{ ...styles.tag, position: "relative", zIndex: 1, fontSize: 10 }}>
-              {i === 0 ? "MAPA DA ROTA" : "RECORDE PESSOAL"}
-            </span>
-          </div>
-          <div style={{ display: "flex", gap: 16, marginBottom: 12 }}>
-            {[
-              [a.dist, "DISTÂNCIA"],
-              [a.time, "TEMPO"],
-              [a.pace || a.speed, a.pace ? "RITMO" : "VEL. MÉDIA"]
-            ].map(([v, l]) => (
-              <div key={l}>
-                <div style={{ fontSize: 16, fontWeight: 700, color: COLORS.accent }}>{v}</div>
-                <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1 }}>{l}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{ ...styles.row, borderTop: `1px solid ${COLORS.border}`, paddingTop: 10 }}>
-            <div style={{ display: "flex", gap: 16 }}>
-              <span style={{ fontSize: 13, color: COLORS.textSecondary, cursor: "pointer" }}>👍 {a.likes}</span>
-              <span style={{ fontSize: 13, color: COLORS.textSecondary, cursor: "pointer" }}>💬 {a.comments}</span>
-            </div>
-            <span style={{ fontSize: 18, color: COLORS.textMuted, cursor: "pointer" }}>↗</span>
-          </div>
-        </div>
-      ))}
-      <div style={{ ...styles.card, borderColor: COLORS.accent + "44", background: COLORS.accent + "0d" }}>
-        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-          <div style={{ background: COLORS.accent, borderRadius: 8, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>✦</div>
-          <div>
-            <div style={{ fontSize: 12, color: COLORS.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>DESTAQUE DA IA</div>
-            <div style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.5 }}>Você está 15% acima da sua média semanal! Que tal um desafio de <strong style={{ color: COLORS.text }}>10km este Domingo</strong>?</div>
-            <button style={{ ...styles.btn, marginTop: 10, padding: "8px 14px", fontSize: 11, width: "auto" }}>ACEITAR DESAFIO</button>
-          </div>
-        </div>
+
+      <div style={styles.sectionTitle}>Feed de Amigos</div>
+      <div style={{ ...styles.card }}>
+        <EmptyState
+          icon="👥"
+          title="Nenhum amigo ainda"
+          subtitle="Adicione amigos para ver as atividades deles aqui e se motivar juntos."
+          btnLabel="ADICIONAR AMIGOS"
+        />
+      </div>
+
+      <div style={styles.sectionTitle}>Suas Atividades</div>
+      <div style={styles.card}>
+        <EmptyState
+          icon="🏃"
+          title="Nenhuma atividade registrada"
+          subtitle="Grave sua primeira corrida, caminhada ou treino de força para aparecer aqui."
+          btnLabel="GRAVAR ATIVIDADE"
+          onBtn={() => onNav("record")}
+        />
       </div>
     </div>
   );
 }
 
 function NutritionScreen() {
-  const [water, setWater] = useState(2.1);
+  const [water, setWater] = useState(0);
   const waterGoal = 3.0;
-  const meals = [
-    { time: "☀️ Café da Manhã", items: [{ name: "Ovos Mexidos (3 unidades)", kcal: 210 }, { name: "Torrada Integral com Abacate", kcal: 218 }] },
-    { time: "🍽 Almoço", items: [{ name: "Frango Gralhado com Quinoa", kcal: 486 }] },
+  const [meals, setMeals] = useState([]);
+  const [showAddMeal, setShowAddMeal] = useState(false);
+  const [mealForm, setMealForm] = useState({ name: "", kcal: "" });
+  const [mealErr, setMealErr] = useState("");
+
+  const totalKcal = meals.reduce((sum, m) => sum + (parseInt(m.kcal) || 0), 0);
+  const goalKcal = 2000;
+  const macros = [
+    { name: "Proteína", cur: 0, goal: 150, color: COLORS.accent },
+    { name: "Carbos", cur: 0, goal: 250, color: COLORS.info },
+    { name: "Gorduras", cur: 0, goal: 65, color: COLORS.warning },
   ];
-  const totalKcal = 1388;
-  const goalKcal = 2800;
-  const macros = [{ name: "Proteína", cur: 112, goal: 180, color: COLORS.accent }, { name: "Carbos", cur: 225, goal: 350, color: COLORS.info }, { name: "Gorduras", cur: 42, goal: 75, color: COLORS.warning }];
+
+  function handleAddMeal() {
+    if (!mealForm.name.trim()) { setMealErr("Informe o nome da refeição."); return; }
+    if (!mealForm.kcal || isNaN(mealForm.kcal) || parseInt(mealForm.kcal) <= 0) { setMealErr("Informe um valor de calorias válido."); return; }
+    setMeals(m => [...m, { name: mealForm.name.trim(), kcal: parseInt(mealForm.kcal) }]);
+    setMealForm({ name: "", kcal: "" });
+    setMealErr("");
+    setShowAddMeal(false);
+  }
 
   return (
     <div style={styles.screen}>
       <div style={{ padding: "16px 20px 0" }}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: COLORS.textMuted, textTransform: "uppercase", marginBottom: 4 }}>RELATÓRIO SEMANAL</div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{ fontSize: 36, fontWeight: 900, color: COLORS.accent }}>2.450</span>
-          <span style={{ fontSize: 14, color: COLORS.textMuted }}>kcal/dia</span>
+          {totalKcal > 0
+            ? <><span style={{ fontSize: 36, fontWeight: 900, color: COLORS.accent }}>{totalKcal.toLocaleString()}</span><span style={{ fontSize: 14, color: COLORS.textMuted }}>kcal hoje</span></>
+            : <><span style={{ fontSize: 36, fontWeight: 900, color: COLORS.textMuted }}>—</span><span style={{ fontSize: 14, color: COLORS.textMuted }}>sem dados ainda</span></>
+          }
         </div>
-        <span style={{ fontSize: 12, color: "#4caf50" }}>↑ +12% vs meta</span>
       </div>
 
       <div style={styles.card}>
-        <div style={styles.row}>
-          <div>
-            <div style={styles.label}>Balanço Calórico</div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: COLORS.accent }}>1.420 <span style={{ fontSize: 14, color: COLORS.textMuted, fontWeight: 400 }}>kcal restantes</span></div>
-          </div>
+        <div style={styles.label}>Balanço Calórico</div>
+        <div style={{ fontSize: 24, fontWeight: 800, color: totalKcal > 0 ? COLORS.accent : COLORS.textMuted }}>
+          {totalKcal.toLocaleString()} <span style={{ fontSize: 14, fontWeight: 400, color: COLORS.textMuted }}>/ {goalKcal.toLocaleString()} kcal</span>
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: COLORS.textMuted, marginTop: 8 }}>
-          <span>Consumido: {totalKcal} kcal</span><span>Meta: {goalKcal} kcal</span>
-        </div>
+        {totalKcal > 0
+          ? <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 4 }}>{Math.max(0, goalKcal - totalKcal).toLocaleString()} kcal restantes</div>
+          : <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 4 }}>Defina sua meta calórica no perfil para ativar o balanço.</div>
+        }
         <ProgressBar value={totalKcal} max={goalKcal} />
       </div>
 
@@ -467,27 +571,36 @@ function NutritionScreen() {
         <div style={styles.label}>Macronutrientes</div>
         {macros.map(m => (
           <div key={m.name} style={{ marginTop: 10 }}>
-            <div style={{ ...styles.row }}>
+            <div style={styles.row}>
               <span style={{ fontSize: 13 }}>{m.name}</span>
-              <span style={{ fontSize: 13, color: COLORS.textMuted }}>{m.cur}g / {m.goal}g</span>
+              <span style={{ fontSize: 13, color: COLORS.textMuted }}>0g / {m.goal}g</span>
             </div>
-            <ProgressBar value={m.cur} max={m.goal} color={m.color} />
+            <ProgressBar value={0} max={m.goal} color={m.color} />
           </div>
         ))}
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 12 }}>
+          Registre suas refeições para acompanhar os macros.
+        </div>
       </div>
 
       <div style={styles.card}>
         <div style={{ ...styles.row, marginBottom: 12 }}>
           <div>
             <div style={styles.label}>Hidratação Diária</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: COLORS.info }}>{water.toFixed(1)}L / {waterGoal}L</div>
-            <div style={{ fontSize: 12, color: COLORS.textMuted }}>Faltam {(waterGoal - water).toFixed(1)}L</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: water > 0 ? COLORS.info : COLORS.textMuted }}>
+              {water.toFixed(1)}L / {waterGoal}L
+            </div>
+            <div style={{ fontSize: 12, color: COLORS.textMuted }}>
+              {water === 0 ? "Registre seu primeiro copo!" : `Faltam ${(waterGoal - water).toFixed(1)}L`}
+            </div>
           </div>
-          <CircleProgress value={water} max={waterGoal} size={70} color={COLORS.info} />
+          <CircleProgress value={water} max={waterGoal} size={70} color={water > 0 ? COLORS.info : COLORS.textMuted} />
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <ProgressBar value={water} max={waterGoal} color={COLORS.info} />
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
           {[["Copo 200ml", 0.2], ["Garrafa 500ml", 0.5], ["Personalizado", 0.3]].map(([lbl, amt]) => (
-            <button key={lbl} onClick={() => setWater(w => Math.min(waterGoal, +(w + amt).toFixed(1)))} style={{ background: COLORS.surface3, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: COLORS.text, cursor: "pointer", fontFamily: "inherit", flex: 1 }}>
+            <button key={lbl} onClick={() => setWater(w => Math.min(waterGoal, +(w + amt).toFixed(1)))}
+              style={{ background: COLORS.surface3, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: COLORS.text, cursor: "pointer", fontFamily: "inherit", flex: 1 }}>
               {lbl}
             </button>
           ))}
@@ -497,27 +610,74 @@ function NutritionScreen() {
       <div style={styles.card}>
         <div style={{ ...styles.row, marginBottom: 12 }}>
           <div style={styles.label}>Registro de Refeições</div>
+          {meals.length > 0 && (
+            <span style={{ fontSize: 12, fontWeight: 700, color: COLORS.accent }}>{totalKcal.toLocaleString()} kcal</span>
+          )}
         </div>
-        {meals.map((meal, i) => (
-          <div key={i} style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.accent, marginBottom: 6 }}>{meal.time}</div>
-            {meal.items.map((item, j) => (
-              <div key={j} style={{ ...styles.row, padding: "6px 0", borderBottom: `1px solid ${COLORS.border}` }}>
-                <span style={{ fontSize: 13, color: COLORS.textSecondary }}>{item.name}</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.text }}>{item.kcal} kcal</span>
+
+        {meals.length === 0 ? (
+          <EmptyState
+            icon="🍽"
+            title="Nenhuma refeição registrada"
+            subtitle="Adicione o que você comeu hoje para calcular calorias e macros."
+          />
+        ) : (
+          meals.map((item, j) => (
+            <div key={j} style={{ ...styles.row, padding: "10px 0", borderBottom: `1px solid ${COLORS.border}` }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{item.name}</div>
               </div>
-            ))}
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.accent }}>{item.kcal} kcal</span>
+                <span onClick={() => setMeals(m => m.filter((_, i) => i !== j))} style={{ fontSize: 16, color: COLORS.textMuted, cursor: "pointer", lineHeight: 1 }}>✕</span>
+              </div>
+            </div>
+          ))
+        )}
+
+        {showAddMeal ? (
+          <div style={{ marginTop: 14, background: COLORS.surface2, borderRadius: 10, padding: "14px" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, color: COLORS.accent, textTransform: "uppercase", marginBottom: 12 }}>Nova Refeição</div>
+
+            <label style={styles.inputLabel}>Nome da refeição</label>
+            <input
+              style={{ ...styles.input, borderColor: mealErr && !mealForm.name.trim() ? COLORS.danger : COLORS.border }}
+              placeholder="Ex: Frango gralhado com arroz"
+              value={mealForm.name}
+              onChange={e => { setMealForm(f => ({ ...f, name: e.target.value })); setMealErr(""); }}
+            />
+
+            <label style={styles.inputLabel}>Calorias (kcal)</label>
+            <input
+              style={{ ...styles.input, borderColor: mealErr && (!mealForm.kcal || isNaN(mealForm.kcal)) ? COLORS.danger : COLORS.border }}
+              placeholder="Ex: 450"
+              value={mealForm.kcal}
+              onChange={e => { setMealForm(f => ({ ...f, kcal: e.target.value.replace(/\D/g, "") })); setMealErr(""); }}
+              type="text"
+              inputMode="numeric"
+            />
+
+            {mealErr && (
+              <div style={{ fontSize: 12, color: COLORS.danger, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                ⚠ {mealErr}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button style={{ ...styles.btn, flex: 1, padding: "11px", fontSize: 12 }} onClick={handleAddMeal}>ADICIONAR</button>
+              <button style={{ ...styles.btnOutline, flex: 1, padding: "11px", fontSize: 12 }} onClick={() => { setShowAddMeal(false); setMealForm({ name: "", kcal: "" }); setMealErr(""); }}>CANCELAR</button>
+            </div>
           </div>
-        ))}
-        <button style={{ ...styles.btnOutline, marginTop: 8, padding: "10px", fontSize: 12 }}>+ Adicionar Refeição</button>
+        ) : (
+          <button style={{ ...styles.btnOutline, marginTop: 12, padding: "10px", fontSize: 12 }} onClick={() => setShowAddMeal(true)}>+ Adicionar Refeição</button>
+        )}
       </div>
 
       <div style={{ ...styles.card, borderColor: COLORS.accent + "44", background: COLORS.accent + "0d" }}>
         <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>✦ IA E INSIGHTS</div>
         <div style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.6 }}>
-          Seu nível de hidratação caiu 15% após o treino de força. Recomendamos ingerir 400ml extras de água rica em eletrólitos nos próximos 30 minutos.
+          Complete seu perfil com peso, altura e objetivos para receber sugestões alimentares personalizadas da IA.
         </div>
-        <button style={{ ...styles.btn, marginTop: 10, padding: "9px", fontSize: 11 }}>REGISTRAR AGORA</button>
       </div>
     </div>
   );
@@ -617,21 +777,20 @@ function RecordScreen() {
 
 function ProgressScreen() {
   const days = ["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"];
-  const kcals = [520, 680, 0, 640, 720, 480, 0];
-  const maxKcal = Math.max(...kcals);
+  const kcals = [0, 0, 0, 0, 0, 0, 0];
   return (
     <div style={styles.screen}>
       <div style={{ padding: "20px 20px 0" }}>
         <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700, letterSpacing: 2 }}>📊 PAINEL DE PERFORMANCE</div>
-        <div style={{ fontSize: 28, fontWeight: 900, marginTop: 4 }}>Seu Progresso Atleta.</div>
-        <div style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 6 }}>Acompanhe sua evolução e métricas otimizadas por IA.</div>
+        <div style={{ fontSize: 28, fontWeight: 900, marginTop: 4 }}>Seu Progresso.</div>
+        <div style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 6 }}>Acompanhe sua evolução conforme você treina.</div>
       </div>
 
       <div style={{ display: "flex", gap: 12, padding: "12px 16px 0" }}>
-        {[["24", "TREINOS TOTAIS", "+4 este mês"], ["1.480", "MINUTOS ATIVOS", "min"]].map(([v, l, s]) => (
+        {[["0", "TREINOS TOTAIS", "comece hoje!"], ["0", "MINUTOS ATIVOS", "min"]].map(([v, l, s]) => (
           <div key={l} style={{ ...styles.card, flex: 1, margin: 0 }}>
             <div style={styles.label}>{l}</div>
-            <div style={{ fontSize: 26, fontWeight: 900, color: COLORS.accent }}>{v}</div>
+            <div style={{ fontSize: 26, fontWeight: 900, color: COLORS.textMuted }}>{v}</div>
             <div style={{ fontSize: 11, color: COLORS.textMuted }}>{s}</div>
           </div>
         ))}
@@ -640,10 +799,10 @@ function ProgressScreen() {
       <div style={styles.card}>
         <div style={styles.label}>Score de Consistência</div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{ fontSize: 32, fontWeight: 900, color: COLORS.accent }}>94%</span>
-          <span style={{ ...styles.tag, fontSize: 11 }}>ELITE</span>
+          <span style={{ fontSize: 32, fontWeight: 900, color: COLORS.textMuted }}>—</span>
+          <span style={{ fontSize: 13, color: COLORS.textMuted }}>sem treinos ainda</span>
         </div>
-        <ProgressBar value={94} max={100} />
+        <ProgressBar value={0} max={100} />
       </div>
 
       <div style={styles.card}>
@@ -652,63 +811,174 @@ function ProgressScreen() {
           <span style={{ fontSize: 11, color: COLORS.textMuted }}>Calorias (kcal)</span>
         </div>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 80 }}>
-          {days.map((d, i) => (
+          {days.map((d) => (
             <div key={d} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-              <div style={{ width: "100%", background: kcals[i] > 0 ? COLORS.accent : COLORS.surface3, borderRadius: "3px 3px 0 0", height: kcals[i] > 0 ? `${(kcals[i] / maxKcal) * 64}px` : "8px", transition: "height 0.5s ease" }} />
+              <div style={{ width: "100%", background: COLORS.surface3, borderRadius: "3px 3px 0 0", height: 8 }} />
               <span style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 0.5 }}>{d}</span>
             </div>
           ))}
+        </div>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 10, textAlign: "center" }}>
+          Grave treinos para ver seu gráfico aqui.
         </div>
       </div>
 
       <div style={styles.card}>
         <div style={{ ...styles.row, marginBottom: 12 }}>
           <div style={styles.label}>Rotina Ativa</div>
-          <span style={{ ...styles.tag, fontSize: 10, background: "#4caf5022", color: "#4caf50" }}>EM CURSO</span>
+          <span style={{ ...styles.tag, fontSize: 10, background: COLORS.textMuted + "22", color: COLORS.textMuted }}>SEM ROTINA</span>
         </div>
-        <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 4 }}>PRÓXIMO TREINO</div>
-        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 6 }}>Peitoral e Tríceps</div>
-        <div style={{ display: "flex", gap: 16 }}>
-          <span style={{ fontSize: 13, color: COLORS.textMuted }}>⏱ 75 min</span>
-          <span style={{ fontSize: 13, color: COLORS.textMuted }}>🔥 640 kcal</span>
-        </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          {["SUPINO RETO", "TRÍCEPS CORDA"].map(ex => (
-            <div key={ex} style={{ flex: 1, background: COLORS.surface3, borderRadius: 8, padding: "28px 0 8px", textAlign: "center" }}>
-              <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1 }}>{ex}</div>
-            </div>
-          ))}
-        </div>
+        <EmptyState
+          icon="🗓"
+          title="Nenhuma rotina criada"
+          subtitle="Crie sua rotina de treinos para que ela apareça aqui com o próximo exercício do dia."
+        />
       </div>
 
       <div style={{ ...styles.card, borderColor: COLORS.accent + "44", background: COLORS.accent + "0d" }}>
-        <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>✦ FEEDBACK DO COACH IA</div>
+        <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>✦ COACH IA</div>
         <div style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.6 }}>
-          Sua consistência nesta semana foi 15% superior à anterior. O volume de treino em "Peitoral" está atingindo o platô ideal. Recomendamos aumentar a carga no Supino Reto em 2.5kg na próxima sessão.
+          Realize seu primeiro treino para receber feedback personalizado da IA sobre sua performance e consistência.
         </div>
       </div>
     </div>
   );
 }
 
-function ProfileScreen({ onNav }) {
-  const stats = [["127", "ATIVIDADES"], ["842", "KM"], ["156", "SEGUIDORES"]];
-  const trophies = [["🏆", "FIRST 5K"], ["🔥", "7 DAY STREAK"], ["🏃", "MARATHON"]];
+function EditProfileScreen({ user, onSave, onBack }) {
+  const [form, setForm] = useState({
+    name: user.name || "",
+    idade: user.idade || "",
+    peso: user.peso || "",
+    altura: user.altura || "",
+    objetivo: user.objetivo || "",
+  });
+  const [saved, setSaved] = useState(false);
+
+  const objetivos = [
+    "Perda de peso",
+    "Ganho de massa magra",
+    "Aumentar consumo de água",
+    "Aumento de resistência física",
+    "Outro",
+  ];
+
+  function handleSave() {
+    if (!form.name.trim()) return;
+    onSave(form);
+    setSaved(true);
+    setTimeout(() => { setSaved(false); onBack(); }, 900);
+  }
+
+  return (
+    <div style={{ ...styles.screen, paddingBottom: 100 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "18px 20px 8px" }}>
+        <button onClick={onBack} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 22, cursor: "pointer", padding: 0, lineHeight: 1 }}>←</button>
+        <div style={{ fontSize: 20, fontWeight: 900 }}>Editar Perfil</div>
+      </div>
+
+      {/* Avatar */}
+      <div style={{ textAlign: "center", padding: "16px 0 8px" }}>
+        <div style={{ width: 80, height: 80, borderRadius: 16, background: COLORS.surface2, border: `2px dashed ${COLORS.border}`, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 900, color: COLORS.accent, position: "relative", cursor: "pointer" }}>
+          {form.name ? form.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "📷"}
+          <div style={{ position: "absolute", bottom: -4, right: -4, background: COLORS.accent, borderRadius: "50%", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#000" }}>📷</div>
+        </div>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 8 }}>Toque para alterar a foto</div>
+      </div>
+
+      {/* Informações pessoais */}
+      <div style={styles.card}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: COLORS.accent, textTransform: "uppercase", marginBottom: 14 }}>Informações Pessoais</div>
+
+        <label style={styles.inputLabel}>Nome Completo</label>
+        <input style={styles.input} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Seu nome completo" />
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <label style={styles.inputLabel}>Idade</label>
+            <input style={styles.input} value={form.idade} onChange={e => setForm({ ...form, idade: e.target.value.replace(/\D/g, "") })} placeholder="anos" type="text" inputMode="numeric" maxLength={3} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={styles.inputLabel}>Peso (kg)</label>
+            <input style={styles.input} value={form.peso} onChange={e => setForm({ ...form, peso: e.target.value.replace(/[^\d.]/g, "") })} placeholder="kg" type="text" inputMode="decimal" />
+          </div>
+        </div>
+
+        <label style={styles.inputLabel}>Altura (cm)</label>
+        <input style={styles.input} value={form.altura} onChange={e => setForm({ ...form, altura: e.target.value.replace(/\D/g, "") })} placeholder="cm" type="text" inputMode="numeric" maxLength={3} />
+      </div>
+
+      {/* Objetivos */}
+      <div style={styles.card}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: COLORS.accent, textTransform: "uppercase", marginBottom: 14 }}>Objetivo Principal</div>
+        {objetivos.map(obj => (
+          <div key={obj} onClick={() => setForm({ ...form, objetivo: obj })}
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderRadius: 8, marginBottom: 6, cursor: "pointer", background: form.objetivo === obj ? COLORS.accent + "22" : COLORS.surface2, border: `1.5px solid ${form.objetivo === obj ? COLORS.accent : COLORS.border}` }}>
+            <span style={{ fontSize: 14, fontWeight: form.objetivo === obj ? 700 : 400, color: form.objetivo === obj ? COLORS.accent : COLORS.text }}>{obj}</span>
+            {form.objetivo === obj && <span style={{ color: COLORS.accent }}>✓</span>}
+          </div>
+        ))}
+      </div>
+
+      {/* Resumo preenchido */}
+      {(form.peso || form.altura || form.idade) && (
+        <div style={{ ...styles.card, borderColor: COLORS.accent + "44", background: COLORS.accent + "0d" }}>
+          <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 10 }}>RESUMO DO PERFIL</div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {form.idade && <div style={{ background: COLORS.surface2, borderRadius: 8, padding: "8px 14px", textAlign: "center" }}><div style={{ fontSize: 18, fontWeight: 900, color: COLORS.accent }}>{form.idade}</div><div style={{ fontSize: 10, color: COLORS.textMuted }}>ANOS</div></div>}
+            {form.peso && <div style={{ background: COLORS.surface2, borderRadius: 8, padding: "8px 14px", textAlign: "center" }}><div style={{ fontSize: 18, fontWeight: 900, color: COLORS.accent }}>{form.peso}</div><div style={{ fontSize: 10, color: COLORS.textMuted }}>KG</div></div>}
+            {form.altura && <div style={{ background: COLORS.surface2, borderRadius: 8, padding: "8px 14px", textAlign: "center" }}><div style={{ fontSize: 18, fontWeight: 900, color: COLORS.accent }}>{form.altura}</div><div style={{ fontSize: 10, color: COLORS.textMuted }}>CM</div></div>}
+            {form.peso && form.altura && (() => { const imc = (parseFloat(form.peso) / Math.pow(parseFloat(form.altura) / 100, 2)).toFixed(1); return !isNaN(imc) && <div style={{ background: COLORS.surface2, borderRadius: 8, padding: "8px 14px", textAlign: "center" }}><div style={{ fontSize: 18, fontWeight: 900, color: COLORS.accent }}>{imc}</div><div style={{ fontSize: 10, color: COLORS.textMuted }}>IMC</div></div>; })()}
+          </div>
+        </div>
+      )}
+
+      <div style={{ padding: "0 16px 16px" }}>
+        <button style={{ ...styles.btn, background: saved ? "#4caf50" : COLORS.accent }} onClick={handleSave}>
+          {saved ? "✓ SALVO!" : "SALVAR ALTERAÇÕES"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ProfileScreen({ onLogout, userName, currentUser, onUpdateUser }) {
+  const onNav = (s) => { if (s === "login") onLogout(); };
+  const [editing, setEditing] = useState(false);
+  const initials = (currentUser?.name || userName || "?").split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
+  const profileComplete = currentUser?.idade && currentUser?.peso && currentUser?.altura;
+
+  if (editing) {
+    return <EditProfileScreen user={currentUser || { name: userName }} onSave={(data) => { onUpdateUser(data); setEditing(false); }} onBack={() => setEditing(false)} />;
+  }
+
   return (
     <div style={styles.screen}>
       <div style={{ textAlign: "center", padding: "24px 20px 16px" }}>
-        <div style={{ width: 80, height: 80, borderRadius: 16, background: COLORS.accent + "33", border: `2px solid ${COLORS.accent}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 900, color: COLORS.accent, margin: "0 auto 12px", position: "relative" }}>
-          EU
+        <div style={{ width: 80, height: 80, borderRadius: 16, background: COLORS.surface2, border: `2px dashed ${COLORS.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 900, color: COLORS.accent, margin: "0 auto 12px", position: "relative", cursor: "pointer" }}>
+          {initials}
           <div style={{ position: "absolute", bottom: -4, right: -4, background: COLORS.accent, borderRadius: "50%", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11 }}>✏</div>
         </div>
-        <div style={{ fontSize: 20, fontWeight: 800 }}>Atleta Name</div>
-        <div style={{ fontSize: 13, color: COLORS.textMuted }}>Atleta desde 2024</div>
+        <div style={{ fontSize: 20, fontWeight: 800 }}>{currentUser?.name || userName || "Novo Atleta"}</div>
+        <div style={{ fontSize: 13, color: COLORS.textMuted }}>
+          {profileComplete ? `${currentUser.peso}kg · ${currentUser.altura}cm · ${currentUser.idade} anos` : "Complete seu perfil para personalizar sua experiência"}
+        </div>
       </div>
 
+      {!profileComplete && (
+        <div style={{ ...styles.card, borderColor: COLORS.warning + "55", background: COLORS.warning + "0d" }}>
+          <div style={{ fontSize: 11, color: COLORS.warning, fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>⚠ PERFIL INCOMPLETO</div>
+          <div style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.6, marginBottom: 12 }}>
+            Adicione seu peso, altura, idade e objetivos para que a IA possa criar planos personalizados para você.
+          </div>
+          <button onClick={() => setEditing(true)} style={{ ...styles.btn, padding: "10px", fontSize: 12, background: COLORS.warning, color: "#000" }}>COMPLETAR PERFIL</button>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 12, padding: "0 16px" }}>
-        {stats.map(([v, l]) => (
+        {[["0", "ATIVIDADES"], ["0", "KM"], ["0", "SEGUIDORES"]].map(([v, l]) => (
           <div key={l} style={{ ...styles.card, flex: 1, margin: 0, textAlign: "center" }}>
-            <div style={{ fontSize: 24, fontWeight: 900, color: COLORS.accent }}>{v}</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: COLORS.textMuted }}>{v}</div>
             <div style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 1 }}>{l}</div>
           </div>
         ))}
@@ -717,52 +987,29 @@ function ProfileScreen({ onNav }) {
       <div style={styles.card}>
         <div style={{ ...styles.row, marginBottom: 12 }}>
           <div style={styles.label}>Meus Troféus</div>
-          <span style={{ fontSize: 11, color: COLORS.accent, cursor: "pointer", fontWeight: 700, letterSpacing: 1 }}>VER TODOS</span>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          {trophies.map(([ico, lbl]) => (
-            <div key={lbl} style={{ flex: 1, background: COLORS.surface2, borderRadius: 8, padding: "12px 0", textAlign: "center" }}>
-              <div style={{ fontSize: 20, marginBottom: 4 }}>{ico}</div>
-              <div style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 0.5 }}>{lbl}</div>
-            </div>
-          ))}
-        </div>
+        <EmptyState
+          icon="🏆"
+          title="Nenhum troféu ainda"
+          subtitle="Complete desafios e metas para conquistar troféus."
+        />
       </div>
 
       <div style={styles.card}>
         <div style={styles.label}>Recordes Pessoais</div>
-        <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-          <div style={{ flex: 1, background: COLORS.surface2, borderRadius: 8, padding: 12 }}>
-            <div style={{ fontSize: 10, color: COLORS.accent, letterSpacing: 1, marginBottom: 4 }}>RUNNING</div>
-            <div style={{ fontSize: 12, color: COLORS.textMuted }}>Best 5k</div>
-            <div style={{ fontSize: 20, fontWeight: 900, color: COLORS.accent }}>21:45</div>
-          </div>
-          <div style={{ flex: 1, background: COLORS.surface2, borderRadius: 8, padding: 12 }}>
-            <div style={{ fontSize: 10, color: COLORS.accent, letterSpacing: 1, marginBottom: 4 }}>STRENGTH</div>
-            <div style={{ fontSize: 12, color: COLORS.textMuted }}>Max Bench</div>
-            <div style={{ fontSize: 20, fontWeight: 900, color: COLORS.accent }}>110kg</div>
-          </div>
-        </div>
-        <div style={{ background: COLORS.surface2, borderRadius: 8, padding: 12, marginTop: 10 }}>
-          <div style={{ ...styles.row }}>
-            <div>
-              <div style={{ fontSize: 12, color: COLORS.textMuted }}>Weekly Volume</div>
-              <div style={{ fontSize: 20, fontWeight: 900, color: COLORS.accent }}>42.5 km</div>
-            </div>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 3 }}>
-              {[30, 50, 40, 70, 55, 80, 65].map((h, i) => (
-                <div key={i} style={{ width: 8, height: h * 0.5, background: i === 5 ? COLORS.accent : COLORS.surface3, borderRadius: "2px 2px 0 0" }} />
-              ))}
-            </div>
-          </div>
-        </div>
+        <EmptyState
+          icon="📈"
+          title="Sem recordes ainda"
+          subtitle="Seus recordes pessoais aparecerão aqui após seus primeiros treinos."
+        />
       </div>
 
       <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 2 }}>
-        {[["✏ Edit Profile", ""], ["🔒 Privacy Settings", ""], ["❓ Help & Support", ""], ["🚪 Logout", COLORS.danger]].map(([lbl, color]) => (
-          <div key={lbl} onClick={lbl.includes("Logout") ? () => onNav("login") : undefined} style={{ ...styles.card, margin: "4px 0", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", padding: "14px 16px" }}>
+        {[["✏ Editar Perfil", "", () => setEditing(true)], ["⚙️ Configurações de conta", "", null], ["❓ Ajuda e Suporte", "", null], ["🚪 Sair", COLORS.danger, () => onNav("login")]].map(([lbl, color, action]) => (
+          <div key={lbl} onClick={action || undefined}
+            style={{ ...styles.card, margin: "4px 0", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", padding: "14px 16px" }}>
             <span style={{ fontSize: 15, fontWeight: 600, color: color || COLORS.text }}>{lbl}</span>
-            {!lbl.includes("Logout") && <span style={{ color: COLORS.textMuted }}>›</span>}
+            {!lbl.includes("Sair") && <span style={{ color: COLORS.textMuted }}>›</span>}
           </div>
         ))}
       </div>
@@ -774,14 +1021,29 @@ function ProfileScreen({ onNav }) {
 
 export default function App() {
   const [screen, setScreen] = useState("login");
+  const [currentUser, setCurrentUser] = useState(null);
 
   const mainScreens = ["feed", "nutrition", "record", "progress", "profile"];
   const isMain = mainScreens.includes(screen);
 
+  function handleLogin(user) {
+    setCurrentUser(user);
+    setScreen("feed");
+  }
+
+  function handleLogout() {
+    setCurrentUser(null);
+    setScreen("login");
+  }
+
+  function handleUpdateUser(data) {
+    setCurrentUser(prev => ({ ...prev, ...data }));
+  }
+
   const navItems = [
-    { id: "feed", label: "Início", icon: "🏠" },
+    { id: "record", label: "Rotina", icon: "🗓" },
     { id: "nutrition", label: "Nutrição", icon: "🥗" },
-    { id: "record", label: "Gravar", icon: "+" },
+    { id: "feed", label: "Início", icon: "🏠" },
     { id: "progress", label: "Progresso", icon: "📊" },
     { id: "profile", label: "Perfil", icon: "👤" },
   ];
@@ -800,31 +1062,33 @@ export default function App() {
       {isMain && (
         <div style={styles.header}>
           <div style={styles.logo}>⚡ Vittness</div>
-          <button style={styles.iconBtn}>🔔</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {currentUser && (
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: COLORS.accent + "33", border: `1.5px solid ${COLORS.accent}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, color: COLORS.accent }}>
+                {currentUser.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)}
+              </div>
+            )}
+            <button style={styles.iconBtn}>🔔</button>
+          </div>
         </div>
       )}
 
-      {screen === "login" && <LoginScreen onNav={setScreen} />}
-      {screen === "register" && <RegisterScreen onNav={setScreen} />}
-      {screen === "feed" && <FeedScreen />}
+      {screen === "login" && <LoginScreen onLogin={handleLogin} onNav={setScreen} />}
+      {screen === "register" && <RegisterScreen onLogin={handleLogin} onNav={setScreen} />}
+      {screen === "feed" && <FeedScreen onNav={setScreen} />}
       {screen === "nutrition" && <NutritionScreen />}
       {screen === "record" && <RecordScreen />}
       {screen === "progress" && <ProgressScreen />}
-      {screen === "profile" && <ProfileScreen onNav={setScreen} />}
+      {screen === "profile" && <ProfileScreen onLogout={handleLogout} userName={currentUser?.name || ""} currentUser={currentUser} onUpdateUser={handleUpdateUser} />}
 
       {isMain && (
         <nav style={styles.bottomNav}>
           {navItems.map(nav => (
-            nav.id === "record" ? (
-              <button key={nav.id} onClick={() => setScreen(nav.id)} style={styles.navCenterBtn}>
-                {nav.icon}
-              </button>
-            ) : (
-              <button key={nav.id} onClick={() => setScreen(nav.id)} style={{ ...styles.navItem, ...(screen === nav.id ? styles.navItemActive : {}) }}>
-                <span style={{ fontSize: 18 }}>{nav.icon}</span>
-                {nav.label}
-              </button>
-            )
+            <button key={nav.id} onClick={() => setScreen(nav.id)}
+              style={{ ...styles.navItem, ...(screen === nav.id ? styles.navItemActive : {}) }}>
+              <span style={{ fontSize: 18 }}>{nav.icon}</span>
+              {nav.label}
+            </button>
           ))}
         </nav>
       )}
