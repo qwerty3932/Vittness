@@ -1,104 +1,87 @@
-const sqlite3 = require("better-sqlite3");
-const path = require("path");
+// ─── ARQUIVO REMOVIDO ─────────────────────────────────────────────────────────
+// O banco de dados local (SQLite) foi substituído pelo Supabase.
+// Toda persistência agora passa pelo cliente em supabase.js.
+//
+// Para criar as tabelas no Supabase, execute o SQL abaixo no
+// SQL Editor do seu projeto (supabase.com → SQL Editor):
+//
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// -- Perfis de usuário (espelha auth.users)
+// CREATE TABLE profiles (
+//   id          UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+//   name        TEXT,
+//   email       TEXT,
+//   idade       INTEGER,
+//   peso        REAL,
+//   altura      INTEGER,
+//   objetivo    TEXT,
+//   created_at  TIMESTAMPTZ DEFAULT now(),
+//   updated_at  TIMESTAMPTZ DEFAULT now()
+// );
+//
+// -- Refeições
+// CREATE TABLE meals (
+//   id         BIGSERIAL PRIMARY KEY,
+//   user_id    UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+//   name       TEXT NOT NULL,
+//   kcal       INTEGER NOT NULL,
+//   logged_at  TIMESTAMPTZ DEFAULT now()
+// );
+//
+// -- Hidratação
+// CREATE TABLE hydration (
+//   id         BIGSERIAL PRIMARY KEY,
+//   user_id    UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+//   amount_ml  INTEGER NOT NULL,
+//   logged_at  TIMESTAMPTZ DEFAULT now()
+// );
+//
+// -- Rotinas de treino
+// CREATE TABLE routines (
+//   id         BIGSERIAL PRIMARY KEY,
+//   user_id    UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+//   name       TEXT NOT NULL,
+//   goal       TEXT,
+//   frequency  TEXT,
+//   created_at TIMESTAMPTZ DEFAULT now()
+// );
+//
+// -- Exercícios de uma rotina
+// CREATE TABLE routine_exercises (
+//   id           BIGSERIAL PRIMARY KEY,
+//   routine_id   BIGINT NOT NULL REFERENCES routines(id) ON DELETE CASCADE,
+//   name         TEXT NOT NULL,
+//   sets         INTEGER,
+//   reps         INTEGER,
+//   duration_min INTEGER,
+//   order_index  INTEGER DEFAULT 0
+// );
+//
+// -- Treinos realizados
+// CREATE TABLE workouts (
+//   id           BIGSERIAL PRIMARY KEY,
+//   user_id      UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+//   routine_id   BIGINT REFERENCES routines(id) ON DELETE SET NULL,
+//   name         TEXT NOT NULL,
+//   kcal_burned  INTEGER,
+//   duration_min INTEGER,
+//   distance_km  REAL,
+//   logged_at    TIMESTAMPTZ DEFAULT now()
+// );
+//
+// -- RLS: habilite Row Level Security em cada tabela e crie políticas:
+// ALTER TABLE profiles         ENABLE ROW LEVEL SECURITY;
+// ALTER TABLE meals            ENABLE ROW LEVEL SECURITY;
+// ALTER TABLE hydration        ENABLE ROW LEVEL SECURITY;
+// ALTER TABLE routines         ENABLE ROW LEVEL SECURITY;
+// ALTER TABLE routine_exercises ENABLE ROW LEVEL SECURITY;
+// ALTER TABLE workouts         ENABLE ROW LEVEL SECURITY;
+//
+// -- Política exemplo (repita para cada tabela):
+// CREATE POLICY "users can manage own data" ON profiles
+//   FOR ALL USING (auth.uid() = id);
+//
+// ─────────────────────────────────────────────────────────────────────────────
 
-const DB_PATH = path.join(__dirname, "vittness.db");
-let db;
-
-function getDb() {
-  if (!db) db = new sqlite3(DB_PATH);
-  return db;
-}
-
-function initDatabase(callback) {
-  const db = getDb();
-
-  // Ativa chaves estrangeiras
-  db.pragma("foreign_keys = ON");
-  db.pragma("journal_mode = WAL");
-
-  db.exec(`
-    -- ── Usuários ──────────────────────────────────────────────────────────────
-    CREATE TABLE IF NOT EXISTS users (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      name        TEXT    NOT NULL,
-      email       TEXT    NOT NULL UNIQUE,
-      password    TEXT    NOT NULL,           -- bcrypt hash
-      idade       INTEGER,
-      peso        REAL,
-      altura      INTEGER,
-      objetivo    TEXT,
-      created_at  TEXT    DEFAULT (datetime('now')),
-      updated_at  TEXT    DEFAULT (datetime('now'))
-    );
-
-    -- ── Refeições ─────────────────────────────────────────────────────────────
-    CREATE TABLE IF NOT EXISTS meals (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      name        TEXT    NOT NULL,
-      kcal        INTEGER NOT NULL,
-      logged_at   TEXT    DEFAULT (datetime('now'))
-    );
-
-    -- ── Hidratação ────────────────────────────────────────────────────────────
-    CREATE TABLE IF NOT EXISTS hydration (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      amount_ml   INTEGER NOT NULL,
-      logged_at   TEXT    DEFAULT (datetime('now'))
-    );
-
-    -- ── Rotinas de treino ─────────────────────────────────────────────────────
-    CREATE TABLE IF NOT EXISTS routines (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      name        TEXT    NOT NULL,
-      goal        TEXT,
-      frequency   TEXT,
-      created_at  TEXT    DEFAULT (datetime('now'))
-    );
-
-    -- ── Exercícios da rotina ──────────────────────────────────────────────────
-    CREATE TABLE IF NOT EXISTS routine_exercises (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      routine_id  INTEGER NOT NULL REFERENCES routines(id) ON DELETE CASCADE,
-      name        TEXT    NOT NULL,
-      sets        INTEGER,
-      reps        INTEGER,
-      duration_min INTEGER,
-      order_index INTEGER DEFAULT 0
-    );
-
-    -- ── Treinos realizados ────────────────────────────────────────────────────
-    CREATE TABLE IF NOT EXISTS workouts (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      routine_id  INTEGER REFERENCES routines(id) ON DELETE SET NULL,
-      name        TEXT    NOT NULL,
-      kcal_burned INTEGER,
-      duration_min INTEGER,
-      distance_km REAL,
-      logged_at   TEXT    DEFAULT (datetime('now'))
-    );
-
-    -- ── Refresh tokens ────────────────────────────────────────────────────────
-    CREATE TABLE IF NOT EXISTS refresh_tokens (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      token       TEXT    NOT NULL UNIQUE,
-      expires_at  TEXT    NOT NULL,
-      created_at  TEXT    DEFAULT (datetime('now'))
-    );
-
-    -- Índices para buscas frequentes
-    CREATE INDEX IF NOT EXISTS idx_meals_user_date    ON meals(user_id, logged_at);
-    CREATE INDEX IF NOT EXISTS idx_hydration_user_date ON hydration(user_id, logged_at);
-    CREATE INDEX IF NOT EXISTS idx_workouts_user_date  ON workouts(user_id, logged_at);
-    CREATE INDEX IF NOT EXISTS idx_refresh_token       ON refresh_tokens(token);
-  `);
-
-  console.log("✅ Banco de dados inicializado:", DB_PATH);
-  if (callback) callback();
-}
-
-module.exports = { getDb, initDatabase };
+module.exports = {}; // mantido para não quebrar imports antigos
