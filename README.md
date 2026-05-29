@@ -1,56 +1,56 @@
-# Vittness Backend
+# Vittness Backend — Supabase Edition
 
-API REST para o app Vittness. Construída com **Node.js + Express + SQLite (better-sqlite3)**.
+API REST do app Vittness. Autenticação e banco de dados 100% via **Supabase**.  
+Não requer SQLite, bcrypt ou JWT próprio.
 
 ---
 
-## 🚀 Instalação e execução
+## 🚀 Instalação
 
 ```bash
-# 1. Entre na pasta
 cd vittness-backend
-
-# 2. Instale as dependências
 npm install
-
-# 3. Configure as variáveis de ambiente
 cp .env.example .env
-# Edite o .env e troque JWT_SECRET por uma string segura
-
-# 4. Inicie o servidor
-npm run dev       # desenvolvimento (auto-reload)
-npm start         # produção
+# Preencha SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env
+npm run dev
 ```
-
-O servidor sobe em `http://localhost:3001` por padrão.
 
 ---
 
-## 🗂 Estrutura de arquivos
+## ⚙️ Configuração do Supabase
+
+### 1. Crie um projeto em supabase.com
+
+### 2. Copie as credenciais
+**Settings → API:**
+- `URL` → `SUPABASE_URL`
+- `service_role` (secret) → `SUPABASE_SERVICE_ROLE_KEY`
+
+### 3. Crie as tabelas
+Vá em **SQL Editor** e cole o SQL dentro do arquivo `database.js`.
+
+### 4. Habilite Row Level Security (RLS)
+O SQL do `database.js` já inclui os comandos de RLS e políticas.
+
+---
+
+## 📁 Estrutura
 
 ```
 vittness-backend/
-├── server.js               # Ponto de entrada
-├── database.js             # Setup e init do SQLite
+├── server.js          — Express + middlewares
+├── supabase.js        — Client Supabase (service role)
+├── database.js        — SQL para criar tabelas no Supabase
 ├── middleware/
-│   └── auth.js             # JWT: geração, verificação e requireAuth
+│   └── auth.js        — requireAuth via supabase.auth.getUser()
 ├── routes/
-│   ├── auth.js             # Registro, login, refresh, logout, excluir conta
-│   ├── user.js             # Perfil, atualização, senha, e-mail, estatísticas
-│   ├── nutrition.js        # Refeições e hidratação
-│   └── routine.js          # Rotinas de treino e treinos realizados
+│   ├── auth.js        — register, login, refresh, logout, delete account
+│   ├── user.js        — perfil, senha, e-mail, stats
+│   ├── nutrition.js   — refeições e hidratação
+│   └── routine.js     — rotinas e treinos
 ├── .env.example
 └── package.json
 ```
-
----
-
-## 🔑 Autenticação
-
-A API usa **JWT (Bearer token)** com **refresh token** de rotação.
-
-- `accessToken` — válido por **2 horas**, enviado no header `Authorization: Bearer <token>`
-- `refreshToken` — válido por **30 dias**, armazenado no banco, usado para renovar o access token
 
 ---
 
@@ -58,117 +58,61 @@ A API usa **JWT (Bearer token)** com **refresh token** de rotação.
 
 ### Auth — `/auth`
 
-| Método | Rota             | Auth | Descrição                          |
-|--------|------------------|------|------------------------------------|
-| POST   | `/register`      | ❌   | Cria nova conta                    |
-| POST   | `/login`         | ❌   | Autentica e retorna tokens         |
-| POST   | `/refresh`       | ❌   | Renova access token via refresh    |
-| POST   | `/logout`        | ✅   | Invalida o refresh token           |
-| DELETE | `/account`       | ✅   | Exclui conta (exige senha)         |
+| Método | Rota          | Auth | Descrição                        |
+|--------|---------------|------|----------------------------------|
+| POST   | `/register`   | ❌   | Cria conta no Supabase Auth      |
+| POST   | `/login`      | ❌   | Login → retorna access/refresh   |
+| POST   | `/refresh`    | ❌   | Renova access token              |
+| POST   | `/logout`     | ✅   | Invalida sessão                  |
+| DELETE | `/account`    | ✅   | Exclui conta e todos os dados    |
 
 **POST /auth/register**
 ```json
-// Request
 { "name": "João Silva", "email": "joao@email.com", "password": "senha123" }
-
-// Response 201
-{
-  "message": "Conta criada com sucesso.",
-  "accessToken": "eyJ...",
-  "refreshToken": "abc123...",
-  "user": { "id": 1, "name": "João Silva", "email": "joao@email.com" }
-}
 ```
 
-**POST /auth/login**
+**POST /auth/login** → retorna:
 ```json
-// Request
-{ "email": "joao@email.com", "password": "senha123" }
-
-// Response 200
 {
   "accessToken": "eyJ...",
-  "refreshToken": "abc123...",
-  "user": { "id": 1, "name": "João Silva", "email": "joao@email.com", "peso": 80, "altura": 175, ... }
+  "refreshToken": "...",
+  "user": { "id": "uuid", "name": "João", "email": "...", "peso": null, ... }
 }
 ```
 
----
+> O `accessToken` deve ser enviado em todas as rotas protegidas:  
+> `Authorization: Bearer <accessToken>`
 
-### Usuário — `/user`  *(requer Bearer token)*
+### Usuário — `/user` *(Bearer token)*
 
-| Método | Rota              | Descrição                          |
-|--------|-------------------|------------------------------------|
-| GET    | `/profile`        | Retorna dados do perfil            |
-| PATCH  | `/profile`        | Atualiza nome, idade, peso, altura, objetivo |
-| PATCH  | `/email`          | Altera e-mail (exige senha)        |
-| PATCH  | `/password`       | Altera senha (exige senha atual)   |
-| GET    | `/stats`          | Estatísticas gerais do usuário     |
+| Método | Rota          | Descrição                        |
+|--------|---------------|----------------------------------|
+| GET    | `/profile`    | Dados do perfil                  |
+| PATCH  | `/profile`    | Atualiza nome, idade, peso, etc. |
+| PATCH  | `/email`      | Altera e-mail                    |
+| PATCH  | `/password`   | Altera senha                     |
+| GET    | `/stats`      | Estatísticas gerais              |
 
-**PATCH /user/profile**
-```json
-// Request (todos opcionais)
-{ "name": "João", "idade": 25, "peso": 80.5, "altura": 175, "objetivo": "Ganho de massa magra" }
-```
+### Nutrição — `/nutrition` *(Bearer token)*
 
----
+| Método | Rota                     | Descrição               |
+|--------|--------------------------|-------------------------|
+| GET    | `/meals?date=YYYY-MM-DD` | Refeições do dia        |
+| POST   | `/meals`                 | Registra refeição       |
+| DELETE | `/meals/:id`             | Remove refeição         |
+| GET    | `/meals/history?days=7`  | Histórico calórico      |
+| GET    | `/hydration?date=...`    | Hidratação do dia       |
+| POST   | `/hydration`             | Registra água           |
+| DELETE | `/hydration/:id`         | Remove registro         |
 
-### Nutrição — `/nutrition`  *(requer Bearer token)*
+### Rotinas — `/routine` *(Bearer token)*
 
-| Método | Rota                   | Descrição                          |
-|--------|------------------------|------------------------------------|
-| GET    | `/meals?date=YYYY-MM-DD` | Refeições do dia + total kcal    |
-| POST   | `/meals`               | Registra refeição                  |
-| DELETE | `/meals/:id`           | Remove refeição                    |
-| GET    | `/meals/history?days=7` | Histórico calórico por dia        |
-| GET    | `/hydration?date=...`  | Hidratação do dia                  |
-| POST   | `/hydration`           | Registra consumo de água           |
-| DELETE | `/hydration/:id`       | Remove registro de água            |
-
-**POST /nutrition/meals**
-```json
-{ "name": "Frango gralhado com arroz", "kcal": 450 }
-```
-
-**POST /nutrition/hydration**
-```json
-{ "amount_ml": 500 }
-```
-
----
-
-### Rotinas — `/routine`  *(requer Bearer token)*
-
-| Método | Rota                  | Descrição                          |
-|--------|-----------------------|------------------------------------|
-| GET    | `/`                   | Lista rotinas do usuário           |
-| POST   | `/`                   | Cria rotina com exercícios         |
-| PATCH  | `/:id`                | Edita rotina                       |
-| DELETE | `/:id`                | Exclui rotina                      |
-| GET    | `/workouts?days=30`   | Treinos realizados + estatísticas  |
-| POST   | `/workouts`           | Registra treino realizado          |
-| DELETE | `/workouts/:id`       | Remove treino                      |
-
-**POST /routine**
-```json
-{
-  "name": "Treino A - Peitoral",
-  "goal": "Ganho de massa magra",
-  "frequency": "3X",
-  "exercises": [
-    { "name": "Supino Reto", "sets": 4, "reps": 10 },
-    { "name": "Crucifixo", "sets": 3, "reps": 12 }
-  ]
-}
-```
-
----
-
-## 🛡 Segurança
-
-- Senhas hasheadas com **bcrypt** (12 rounds)
-- JWT com segredo via variável de ambiente
-- Rotação de refresh tokens (cada uso gera um novo par)
-- Helmet para headers HTTP seguros
-- Rate limiting: 100 req/min por IP
-- LGPD: usuário pode excluir sua conta e todos os dados via `DELETE /auth/account`
+| Método | Rota               | Descrição               |
+|--------|--------------------|-------------------------|
+| GET    | `/`                | Lista rotinas           |
+| POST   | `/`                | Cria rotina             |
+| PATCH  | `/:id`             | Edita rotina            |
+| DELETE | `/:id`             | Exclui rotina           |
+| GET    | `/workouts?days=30`| Treinos realizados      |
+| POST   | `/workouts`        | Registra treino         |
+| DELETE | `/workouts/:id`    | Remove treino           |

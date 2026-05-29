@@ -1,71 +1,59 @@
-const express = require("express");
-const bcrypt = require("bcrypt");
-const { getDb } = require("../database");
-const { generateTokens, requireAuth, REFRESH_EXPIRES_DAYS } = require("../middleware/auth");
+const express  = require("express");
+const supabase = require("../supabase");
+const { requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
-const SALT_ROUNDS = 12;
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-function isValidEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-function refreshExpiresAt() {
-  const d = new Date();
-  d.setDate(d.getDate() + REFRESH_EXPIRES_DAYS);
-  return d.toISOString();
-}
-
-// ─── POST /auth/register ─────────────────────────────────────────────────────
+// ─── POST /auth/register ──────────────────────────────────────────────────────
 // Body: { name, email, password }
 router.post("/register", async (req, res, next) => {
   try {
     const { name, email, password } = req.body;
 
-    // Validações
     if (!name || !email || !password)
       return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios." });
-    if (!isValidEmail(email))
+    if (!/\S+@\S+\.\S+/.test(email))
       return res.status(400).json({ error: "E-mail inválido." });
     if (password.length < 6)
       return res.status(400).json({ error: "A senha deve ter pelo menos 6 caracteres." });
 
-    const db = getDb();
+    // Cria usuário no Supabase Auth
+    const { data, error } = await supabase.auth.admin.createUser({
+      email: email.toLowerCase().trim(),
+      password,
+      email_confirm: true,           // confirma o e-mail automaticamente
+      user_metadata: { name: name.trim() },
+    });
 
-    // Verifica duplicidade
-    const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email.toLowerCase().trim());
-    if (existing)
-      return res.status(409).json({ error: "Este e-mail já está cadastrado." });
+    if (error) {
+      // Supabase retorna "User already registered" quando e-mail existe
+      if (error.message?.toLowerCase().includes("already")) {
+        return res.status(409).json({ error: "Este e-mail já está cadastrado." });
+      }
+      return res.status(400).json({ error: error.message });
+    }
 
-    // Hash da senha
-    const hash = await bcrypt.hash(password, SALT_ROUNDS);
-
-    // Insere usuário
-    const result = db.prepare(
-      "INSERT INTO users (name, email, password) VALUES (?, ?, ?)"
-    ).run(name.trim(), email.toLowerCase().trim(), hash);
-
-    const userId = result.lastInsertRowid;
-
-    // Gera tokens
-    const { accessToken, refreshToken } = generateTokens(userId);
-    db.prepare(
-      "INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)"
-    ).run(userId, refreshToken, refreshExpiresAt());
+    // Salva o nome na tabela profiles (criada no Supabase — veja README)
+    await supabase.from("profiles").upsert({
+      id:   data.user.id,
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
+    });
 
     res.status(201).json({
       message: "Conta criada com sucesso.",
-      accessToken,
-      refreshToken,
-      user: { id: userId, name: name.trim(), email: email.toLowerCase().trim() },
+      user: {
+        id:    data.user.id,
+        name:  name.trim(),
+        email: data.user.email,
+      },
     });
   } catch (err) {
     next(err);
   }
 });
 
-// ─── POST /auth/login ────────────────────────────────────────────────────────
+// ─── POST /auth/login ─────────────────────────────────────────────────────────
 // Body: { email, password }
 router.post("/login", async (req, res, next) => {
   try {
@@ -74,34 +62,34 @@ router.post("/login", async (req, res, next) => {
     if (!email || !password)
       return res.status(400).json({ error: "E-mail e senha são obrigatórios." });
 
-    const db = getDb();
-    const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email.toLowerCase().trim());
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.toLowerCase().trim(),
+      password,
+    });
 
-    if (!user)
+    if (error)
       return res.status(401).json({ error: "E-mail ou senha incorretos." });
 
-    const match = await bcrypt.compare(password, user.password);
-    if (!match)
-      return res.status(401).json({ error: "E-mail ou senha incorretos." });
-
-    // Gera tokens
-    const { accessToken, refreshToken } = generateTokens(user.id);
-    db.prepare(
-      "INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)"
-    ).run(user.id, refreshToken, refreshExpiresAt());
+    // Busca dados extras do perfil
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("name, idade, peso, altura, objetivo")
+      .eq("id", data.user.id)
+      .single();
 
     res.json({
-      message: "Login realizado com sucesso.",
-      accessToken,
-      refreshToken,
+      message:      "Login realizado com sucesso.",
+      accessToken:  data.session.access_token,
+      refreshToken: data.session.refresh_token,
+      expiresAt:    data.session.expires_at,
       user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        idade: user.idade,
-        peso: user.peso,
-        altura: user.altura,
-        objetivo: user.objetivo,
+        id:      data.user.id,
+        email:   data.user.email,
+        name:    profile?.name    || data.user.user_metadata?.name || "",
+        idade:   profile?.idade   || null,
+        peso:    profile?.peso    || null,
+        altura:  profile?.altura  || null,
+        objetivo: profile?.objetivo || null,
       },
     });
   } catch (err) {
@@ -109,70 +97,46 @@ router.post("/login", async (req, res, next) => {
   }
 });
 
-// ─── POST /auth/refresh ──────────────────────────────────────────────────────
+// ─── POST /auth/refresh ───────────────────────────────────────────────────────
 // Body: { refreshToken }
-router.post("/refresh", (req, res, next) => {
+router.post("/refresh", async (req, res, next) => {
   try {
     const { refreshToken } = req.body;
     if (!refreshToken)
       return res.status(400).json({ error: "Refresh token não fornecido." });
 
-    const db = getDb();
-    const row = db.prepare(
-      "SELECT * FROM refresh_tokens WHERE token = ? AND expires_at > datetime('now')"
-    ).get(refreshToken);
+    const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
 
-    if (!row)
+    if (error)
       return res.status(401).json({ error: "Refresh token inválido ou expirado." });
 
-    // Remove o token usado (rotação de refresh token)
-    db.prepare("DELETE FROM refresh_tokens WHERE id = ?").run(row.id);
-
-    // Gera novos tokens
-    const { accessToken, refreshToken: newRefreshToken } = generateTokens(row.user_id);
-    db.prepare(
-      "INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)"
-    ).run(row.user_id, newRefreshToken, refreshExpiresAt());
-
-    res.json({ accessToken, refreshToken: newRefreshToken });
+    res.json({
+      accessToken:  data.session.access_token,
+      refreshToken: data.session.refresh_token,
+      expiresAt:    data.session.expires_at,
+    });
   } catch (err) {
     next(err);
   }
 });
 
-// ─── POST /auth/logout ───────────────────────────────────────────────────────
-// Body: { refreshToken }
-router.post("/logout", requireAuth, (req, res, next) => {
+// ─── POST /auth/logout ────────────────────────────────────────────────────────
+router.post("/logout", requireAuth, async (req, res, next) => {
   try {
-    const { refreshToken } = req.body;
-    const db = getDb();
-
-    if (refreshToken) {
-      db.prepare("DELETE FROM refresh_tokens WHERE token = ? AND user_id = ?")
-        .run(refreshToken, req.userId);
-    }
-
+    const token = req.headers.authorization.split(" ")[1];
+    await supabase.auth.admin.signOut(token);
     res.json({ message: "Logout realizado com sucesso." });
   } catch (err) {
     next(err);
   }
 });
 
-// ─── DELETE /auth/account ────────────────────────────────────────────────────
-// Exclui conta do usuário logado
+// ─── DELETE /auth/account ─────────────────────────────────────────────────────
+// Exclui a conta do usuário logado (LGPD)
 router.delete("/account", requireAuth, async (req, res, next) => {
   try {
-    const { password } = req.body;
-    const db = getDb();
-
-    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.userId);
-    if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
-
-    const match = await bcrypt.compare(password, user.password);
-    if (!match)
-      return res.status(401).json({ error: "Senha incorreta." });
-
-    db.prepare("DELETE FROM users WHERE id = ?").run(req.userId);
+    const { error } = await supabase.auth.admin.deleteUser(req.userId);
+    if (error) return res.status(500).json({ error: error.message });
 
     res.json({ message: "Conta excluída com sucesso." });
   } catch (err) {

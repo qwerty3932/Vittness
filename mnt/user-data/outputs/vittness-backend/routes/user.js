@@ -1,153 +1,101 @@
-const express = require("express");
-const { getDb } = require("../../../../../database");
+const express  = require("express");
+const supabase = require("../supabase");
 const { requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
-
-// Todos os endpoints exigem autenticação
 router.use(requireAuth);
 
-// ─── GET /user/profile ───────────────────────────────────────────────────────
-router.get("/profile", (req, res, next) => {
+router.get("/profile", async (req, res, next) => {
   try {
-    const db = getDb();
-    const user = db.prepare(
-      "SELECT id, name, email, idade, peso, altura, objetivo, created_at FROM users WHERE id = ?"
-    ).get(req.userId);
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, name, email, idade, peso, altura, objetivo, created_at")
+      .eq("id", req.userId)
+      .single();
 
-    if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
-    res.json({ user });
-  } catch (err) {
-    next(err);
-  }
+    if (error) return res.status(404).json({ error: "Usuário não encontrado." });
+    res.json({ user: data });
+  } catch (err) { next(err); }
 });
 
-// ─── PATCH /user/profile ─────────────────────────────────────────────────────
-// Body: { name?, idade?, peso?, altura?, objetivo? }
-router.patch("/profile", (req, res, next) => {
+router.patch("/profile", async (req, res, next) => {
   try {
     const { name, idade, peso, altura, objetivo } = req.body;
-    const db = getDb();
+    const updates = {};
 
-    const fields = [];
-    const values = [];
+    if (name     !== undefined) updates.name     = name.trim();
+    if (idade    !== undefined) updates.idade    = Number(idade)  || null;
+    if (peso     !== undefined) updates.peso     = Number(peso)   || null;
+    if (altura   !== undefined) updates.altura   = Number(altura) || null;
+    if (objetivo !== undefined) updates.objetivo = objetivo;
 
-    if (name !== undefined) { fields.push("name = ?"); values.push(name.trim()); }
-    if (idade !== undefined) { fields.push("idade = ?"); values.push(Number(idade) || null); }
-    if (peso !== undefined) { fields.push("peso = ?"); values.push(Number(peso) || null); }
-    if (altura !== undefined) { fields.push("altura = ?"); values.push(Number(altura) || null); }
-    if (objetivo !== undefined) { fields.push("objetivo = ?"); values.push(objetivo); }
-
-    if (fields.length === 0)
+    if (Object.keys(updates).length === 0)
       return res.status(400).json({ error: "Nenhum campo para atualizar." });
 
-    fields.push("updated_at = datetime('now')");
-    values.push(req.userId);
+    updates.updated_at = new Date().toISOString();
 
-    db.prepare(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+    const { data, error } = await supabase
+      .from("profiles")
+      .update(updates)
+      .eq("id", req.userId)
+      .select()
+      .single();
 
-    const updated = db.prepare(
-      "SELECT id, name, email, idade, peso, altura, objetivo FROM users WHERE id = ?"
-    ).get(req.userId);
-
-    res.json({ message: "Perfil atualizado.", user: updated });
-  } catch (err) {
-    next(err);
-  }
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ message: "Perfil atualizado.", user: data });
+  } catch (err) { next(err); }
 });
 
-// ─── PATCH /user/email ───────────────────────────────────────────────────────
-// Body: { newEmail, password }
 router.patch("/email", async (req, res, next) => {
   try {
-    const bcrypt = require("bcrypt");
-    const { newEmail, password } = req.body;
+    const { newEmail } = req.body;
+    if (!newEmail) return res.status(400).json({ error: "Novo e-mail é obrigatório." });
 
-    if (!newEmail || !password)
-      return res.status(400).json({ error: "Novo e-mail e senha são obrigatórios." });
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail))
-      return res.status(400).json({ error: "E-mail inválido." });
+    const { error } = await supabase.auth.admin.updateUserById(req.userId, {
+      email: newEmail.toLowerCase().trim(),
+    });
 
-    const db = getDb();
-    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.userId);
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.status(401).json({ error: "Senha incorreta." });
-
-    const existing = db.prepare("SELECT id FROM users WHERE email = ? AND id != ?")
-      .get(newEmail.toLowerCase().trim(), req.userId);
-    if (existing) return res.status(409).json({ error: "E-mail já em uso." });
-
-    db.prepare("UPDATE users SET email = ?, updated_at = datetime('now') WHERE id = ?")
-      .run(newEmail.toLowerCase().trim(), req.userId);
-
-    res.json({ message: "E-mail atualizado com sucesso." });
-  } catch (err) {
-    next(err);
-  }
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ message: "E-mail atualizado. Verifique sua caixa de entrada." });
+  } catch (err) { next(err); }
 });
 
-// ─── PATCH /user/password ────────────────────────────────────────────────────
-// Body: { currentPassword, newPassword }
 router.patch("/password", async (req, res, next) => {
   try {
-    const bcrypt = require("bcrypt");
-    const { currentPassword, newPassword } = req.body;
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6)
+      return res.status(400).json({ error: "Nova senha deve ter ao menos 6 caracteres." });
 
-    if (!currentPassword || !newPassword)
-      return res.status(400).json({ error: "Senha atual e nova senha são obrigatórias." });
-    if (newPassword.length < 6)
-      return res.status(400).json({ error: "A nova senha deve ter pelo menos 6 caracteres." });
+    const { error } = await supabase.auth.admin.updateUserById(req.userId, {
+      password: newPassword,
+    });
 
-    const db = getDb();
-    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.userId);
-    const match = await bcrypt.compare(currentPassword, user.password);
-    if (!match) return res.status(401).json({ error: "Senha atual incorreta." });
-
-    const hash = await bcrypt.hash(newPassword, 12);
-    db.prepare("UPDATE users SET password = ?, updated_at = datetime('now') WHERE id = ?")
-      .run(hash, req.userId);
-
-    // Invalida todos os refresh tokens do usuário
-    db.prepare("DELETE FROM refresh_tokens WHERE user_id = ?").run(req.userId);
-
-    res.json({ message: "Senha atualizada. Faça login novamente." });
-  } catch (err) {
-    next(err);
-  }
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ message: "Senha atualizada com sucesso." });
+  } catch (err) { next(err); }
 });
 
-// ─── GET /user/stats ─────────────────────────────────────────────────────────
-router.get("/stats", (req, res, next) => {
+router.get("/stats", async (req, res, next) => {
   try {
-    const db = getDb();
+    const [workoutsRes, kmRes, minutesRes, kcalRes] = await Promise.all([
+      supabase.from("workouts").select("id", { count: "exact", head: true }).eq("user_id", req.userId),
+      supabase.from("workouts").select("distance_km").eq("user_id", req.userId),
+      supabase.from("workouts").select("duration_min").eq("user_id", req.userId),
+      supabase.from("meals").select("kcal").eq("user_id", req.userId)
+        .gte("logged_at", new Date(Date.now() - 7 * 86400000).toISOString()),
+    ]);
 
-    const totalWorkouts = db.prepare(
-      "SELECT COUNT(*) AS count FROM workouts WHERE user_id = ?"
-    ).get(req.userId);
-
-    const totalKm = db.prepare(
-      "SELECT COALESCE(SUM(distance_km), 0) AS km FROM workouts WHERE user_id = ?"
-    ).get(req.userId);
-
-    const totalMinutes = db.prepare(
-      "SELECT COALESCE(SUM(duration_min), 0) AS min FROM workouts WHERE user_id = ?"
-    ).get(req.userId);
-
-    const weeklyKcal = db.prepare(`
-      SELECT COALESCE(SUM(kcal), 0) AS total
-      FROM meals
-      WHERE user_id = ? AND logged_at >= datetime('now', '-7 days')
-    `).get(req.userId);
+    const totalKm      = (kmRes.data      || []).reduce((s, r) => s + (r.distance_km  || 0), 0);
+    const totalMinutes = (minutesRes.data || []).reduce((s, r) => s + (r.duration_min || 0), 0);
+    const weeklyKcal   = (kcalRes.data    || []).reduce((s, r) => s + (r.kcal         || 0), 0);
 
     res.json({
-      totalWorkouts: totalWorkouts.count,
-      totalKm: totalKm.km,
-      totalMinutes: totalMinutes.min,
-      weeklyKcalConsumed: weeklyKcal.total,
+      totalWorkouts:      workoutsRes.count || 0,
+      totalKm:            +totalKm.toFixed(2),
+      totalMinutes,
+      weeklyKcalConsumed: weeklyKcal,
     });
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 });
 
 module.exports = router;

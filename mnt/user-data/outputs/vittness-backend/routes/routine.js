@@ -1,189 +1,158 @@
-const express = require("express");
-const { getDb } = require("../../../../../database");
+const express  = require("express");
+const supabase = require("../supabase");
 const { requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
 router.use(requireAuth);
 
-// ─── ROTINAS ─────────────────────────────────────────────────────────────────
-
-// GET /routine
-router.get("/", (req, res, next) => {
+router.get("/", async (req, res, next) => {
   try {
-    const db = getDb();
-    const routines = db.prepare(
-      "SELECT * FROM routines WHERE user_id = ? ORDER BY created_at DESC"
-    ).all(req.userId);
+    const { data, error } = await supabase
+      .from("routines")
+      .select("*, routine_exercises(*)")
+      .eq("user_id", req.userId)
+      .order("created_at", { ascending: false });
 
-    // Inclui exercícios de cada rotina
-    const result = routines.map(r => ({
-      ...r,
-      exercises: db.prepare(
-        "SELECT * FROM routine_exercises WHERE routine_id = ? ORDER BY order_index ASC"
-      ).all(r.id),
-    }));
-
-    res.json({ routines: result });
-  } catch (err) {
-    next(err);
-  }
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ routines: data || [] });
+  } catch (err) { next(err); }
 });
 
-// POST /routine
-// Body: { name, goal, frequency, exercises: [{ name, sets, reps, duration_min }] }
-router.post("/", (req, res, next) => {
+router.post("/", async (req, res, next) => {
   try {
     const { name, goal, frequency, exercises = [] } = req.body;
-
-    if (!name || !name.trim())
+    if (!name?.trim())
       return res.status(400).json({ error: "Nome da rotina é obrigatório." });
 
-    const db = getDb();
+    const { data: routine, error } = await supabase
+      .from("routines")
+      .insert({ user_id: req.userId, name: name.trim(), goal: goal || null, frequency: frequency || null })
+      .select()
+      .single();
 
-    const result = db.prepare(
-      "INSERT INTO routines (user_id, name, goal, frequency) VALUES (?, ?, ?, ?)"
-    ).run(req.userId, name.trim(), goal || null, frequency || null);
+    if (error) return res.status(500).json({ error: error.message });
 
-    const routineId = result.lastInsertRowid;
+    if (exercises.length > 0) {
+      await supabase.from("routine_exercises").insert(
+        exercises.map((ex, i) => ({
+          routine_id:   routine.id,
+          name:         ex.name,
+          sets:         ex.sets         || null,
+          reps:         ex.reps         || null,
+          duration_min: ex.duration_min || null,
+          order_index:  i,
+        }))
+      );
+    }
 
-    // Insere exercícios em lote
-    const insertEx = db.prepare(
-      "INSERT INTO routine_exercises (routine_id, name, sets, reps, duration_min, order_index) VALUES (?, ?, ?, ?, ?, ?)"
-    );
-    exercises.forEach((ex, i) => {
-      insertEx.run(routineId, ex.name, ex.sets || null, ex.reps || null, ex.duration_min || null, i);
-    });
+    const { data: full } = await supabase
+      .from("routines")
+      .select("*, routine_exercises(*)")
+      .eq("id", routine.id)
+      .single();
 
-    const routine = db.prepare("SELECT * FROM routines WHERE id = ?").get(routineId);
-    const exList = db.prepare("SELECT * FROM routine_exercises WHERE routine_id = ? ORDER BY order_index").all(routineId);
-
-    res.status(201).json({ message: "Rotina criada.", routine: { ...routine, exercises: exList } });
-  } catch (err) {
-    next(err);
-  }
+    res.status(201).json({ message: "Rotina criada.", routine: full });
+  } catch (err) { next(err); }
 });
 
-// PATCH /routine/:id
-router.patch("/:id", (req, res, next) => {
+router.patch("/:id", async (req, res, next) => {
   try {
     const { name, goal, frequency } = req.body;
-    const db = getDb();
+    const updates = {};
+    if (name)      updates.name      = name.trim();
+    if (goal)      updates.goal      = goal;
+    if (frequency) updates.frequency = frequency;
 
-    const routine = db.prepare("SELECT * FROM routines WHERE id = ? AND user_id = ?")
-      .get(req.params.id, req.userId);
-    if (!routine) return res.status(404).json({ error: "Rotina não encontrada." });
-
-    const fields = [], values = [];
-    if (name) { fields.push("name = ?"); values.push(name.trim()); }
-    if (goal !== undefined) { fields.push("goal = ?"); values.push(goal); }
-    if (frequency !== undefined) { fields.push("frequency = ?"); values.push(frequency); }
-
-    if (fields.length === 0)
+    if (Object.keys(updates).length === 0)
       return res.status(400).json({ error: "Nenhum campo para atualizar." });
 
-    values.push(req.params.id);
-    db.prepare(`UPDATE routines SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+    const { error } = await supabase
+      .from("routines")
+      .update(updates)
+      .eq("id", req.params.id)
+      .eq("user_id", req.userId);
 
+    if (error) return res.status(500).json({ error: error.message });
     res.json({ message: "Rotina atualizada." });
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 });
 
-// DELETE /routine/:id
-router.delete("/:id", (req, res, next) => {
+router.delete("/:id", async (req, res, next) => {
   try {
-    const db = getDb();
-    const result = db.prepare(
-      "DELETE FROM routines WHERE id = ? AND user_id = ?"
-    ).run(req.params.id, req.userId);
+    const { error } = await supabase
+      .from("routines")
+      .delete()
+      .eq("id", req.params.id)
+      .eq("user_id", req.userId);
 
-    if (result.changes === 0)
-      return res.status(404).json({ error: "Rotina não encontrada." });
-
+    if (error) return res.status(404).json({ error: "Rotina não encontrada." });
     res.json({ message: "Rotina excluída." });
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 });
 
-// ─── TREINOS REALIZADOS ───────────────────────────────────────────────────────
-
-// GET /routine/workouts?days=30
-router.get("/workouts", (req, res, next) => {
+router.get("/workouts", async (req, res, next) => {
   try {
-    const days = Math.min(parseInt(req.query.days) || 30, 365);
-    const db = getDb();
+    const days  = Math.min(parseInt(req.query.days) || 30, 365);
+    const since = new Date(Date.now() - days * 86400000).toISOString();
 
-    const workouts = db.prepare(`
-      SELECT w.*, r.name AS routine_name
-      FROM workouts w
-      LEFT JOIN routines r ON w.routine_id = r.id
-      WHERE w.user_id = ? AND w.logged_at >= datetime('now', ? || ' days')
-      ORDER BY w.logged_at DESC
-    `).all(req.userId, `-${days}`);
+    const { data, error } = await supabase
+      .from("workouts")
+      .select("*, routines(name)")
+      .eq("user_id", req.userId)
+      .gte("logged_at", since)
+      .order("logged_at", { ascending: false });
 
-    const stats = db.prepare(`
-      SELECT
-        COUNT(*)                          AS total_workouts,
-        COALESCE(SUM(duration_min), 0)    AS total_minutes,
-        COALESCE(SUM(kcal_burned), 0)     AS total_kcal,
-        COALESCE(SUM(distance_km), 0)     AS total_km
-      FROM workouts
-      WHERE user_id = ? AND logged_at >= datetime('now', ? || ' days')
-    `).get(req.userId, `-${days}`);
+    if (error) return res.status(500).json({ error: error.message });
 
-    res.json({ days, workouts, stats });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// POST /routine/workouts
-// Body: { name, routine_id?, kcal_burned?, duration_min?, distance_km? }
-router.post("/workouts", (req, res, next) => {
-  try {
-    const { name, routine_id, kcal_burned, duration_min, distance_km } = req.body;
-
-    if (!name || !name.trim())
-      return res.status(400).json({ error: "Nome do treino é obrigatório." });
-
-    const db = getDb();
-
-    const result = db.prepare(`
-      INSERT INTO workouts (user_id, routine_id, name, kcal_burned, duration_min, distance_km)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      req.userId,
-      routine_id || null,
-      name.trim(),
-      kcal_burned ? Math.round(Number(kcal_burned)) : null,
-      duration_min ? Math.round(Number(duration_min)) : null,
-      distance_km ? Number(distance_km) : null
+    const stats = (data || []).reduce(
+      (acc, w) => ({
+        total_workouts: acc.total_workouts + 1,
+        total_minutes:  acc.total_minutes  + (w.duration_min || 0),
+        total_kcal:     acc.total_kcal     + (w.kcal_burned  || 0),
+        total_km:       acc.total_km       + (w.distance_km  || 0),
+      }),
+      { total_workouts: 0, total_minutes: 0, total_kcal: 0, total_km: 0 }
     );
 
-    const workout = db.prepare("SELECT * FROM workouts WHERE id = ?").get(result.lastInsertRowid);
-    res.status(201).json({ message: "Treino registrado.", workout });
-  } catch (err) {
-    next(err);
-  }
+    res.json({ days, workouts: data, stats });
+  } catch (err) { next(err); }
 });
 
-// DELETE /routine/workouts/:id
-router.delete("/workouts/:id", (req, res, next) => {
+router.post("/workouts", async (req, res, next) => {
   try {
-    const db = getDb();
-    const result = db.prepare(
-      "DELETE FROM workouts WHERE id = ? AND user_id = ?"
-    ).run(req.params.id, req.userId);
+    const { name, routine_id, kcal_burned, duration_min, distance_km } = req.body;
+    if (!name?.trim())
+      return res.status(400).json({ error: "Nome do treino é obrigatório." });
 
-    if (result.changes === 0)
-      return res.status(404).json({ error: "Treino não encontrado." });
+    const { data, error } = await supabase
+      .from("workouts")
+      .insert({
+        user_id:      req.userId,
+        routine_id:   routine_id   || null,
+        name:         name.trim(),
+        kcal_burned:  kcal_burned  ? Math.round(Number(kcal_burned))  : null,
+        duration_min: duration_min ? Math.round(Number(duration_min)) : null,
+        distance_km:  distance_km  ? Number(distance_km)              : null,
+      })
+      .select()
+      .single();
 
+    if (error) return res.status(500).json({ error: error.message });
+    res.status(201).json({ message: "Treino registrado.", workout: data });
+  } catch (err) { next(err); }
+});
+
+router.delete("/workouts/:id", async (req, res, next) => {
+  try {
+    const { error } = await supabase
+      .from("workouts")
+      .delete()
+      .eq("id", req.params.id)
+      .eq("user_id", req.userId);
+
+    if (error) return res.status(404).json({ error: "Treino não encontrado." });
     res.json({ message: "Treino removido." });
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 });
 
 module.exports = router;

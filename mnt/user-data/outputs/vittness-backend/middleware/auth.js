@@ -1,36 +1,25 @@
-const jwt = require("jsonwebtoken");
+const supabase = require("../supabase");
 
-const JWT_SECRET = process.env.JWT_SECRET || "vittness_secret_dev_troque_em_producao";
-const JWT_EXPIRES = "2h";
-const REFRESH_EXPIRES_DAYS = 30;
-
-function generateTokens(userId) {
-  const accessToken = jwt.sign({ userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
-  const refreshToken = require("crypto").randomBytes(40).toString("hex");
-  return { accessToken, refreshToken };
-}
-
-function verifyToken(token) {
-  return jwt.verify(token, JWT_SECRET);
-}
-
-// Middleware: exige autenticação
-function requireAuth(req, res, next) {
+// Middleware: valida o JWT emitido pelo Supabase
+// O frontend envia: Authorization: Bearer <supabase_access_token>
+async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({ error: "Token de autenticação não fornecido." });
   }
+
   const token = authHeader.split(" ")[1];
-  try {
-    const payload = verifyToken(token);
-    req.userId = payload.userId;
-    next();
-  } catch (err) {
-    if (err.name === "TokenExpiredError") {
-      return res.status(401).json({ error: "Token expirado. Faça login novamente.", code: "TOKEN_EXPIRED" });
-    }
-    return res.status(401).json({ error: "Token inválido." });
+
+  const { data, error } = await supabase.auth.getUser(token);
+
+  if (error || !data?.user) {
+    return res.status(401).json({ error: "Token inválido ou expirado. Faça login novamente." });
   }
+
+  // Disponibiliza o usuário autenticado para as rotas
+  req.user   = data.user;
+  req.userId = data.user.id; // UUID do Supabase
+  next();
 }
 
-module.exports = { generateTokens, verifyToken, requireAuth, REFRESH_EXPIRES_DAYS };
+module.exports = { requireAuth };
