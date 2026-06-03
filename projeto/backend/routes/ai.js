@@ -1,20 +1,26 @@
-const express   = require("express");
-const ollama = require("ollama");
-const supabase   = require("../supabase");
+const express = require("express");
+const Groq = require("groq-sdk"); // 1. Importa o SDK da Groq
+const supabase = require("../supabase");
 const { requireAuth } = require("../middleware/auth");
+
+// 2. Inicializa a Groq (ela busca a chave GROQ_API_KEY do seu .env automaticamente)
+const groq = new Groq();
 
 const router = express.Router();
 router.use(requireAuth);
 
 // ─── POST /ai/generate-plan ───────────────────────────────────────────────────
-// Body: { goal, frequency, days[] }
-// Gera um plano de treino semanal completo com base nos exercícios do banco
 router.post("/generate-plan", async (req, res, next) => {
   try {
     const { goal, frequency } = req.body;
 
     if (!goal || !frequency)
       return res.status(400).json({ error: "Objetivo e frequência são obrigatórios." });
+
+    const daysPerWeek = parseInt(frequency, 10);
+    if (isNaN(daysPerWeek) || daysPerWeek < 1 || daysPerWeek > 7) {
+      return res.status(400).json({ error: "A frequência deve ser um número entre 1 e 7." });
+    }
 
     // 1. Busca perfil do usuário
     const { data: profile } = await supabase
@@ -48,38 +54,36 @@ router.post("/generate-plan", async (req, res, next) => {
       .map(([cat, exs]) => `${cat}: ${exs.join(", ")}`)
       .join("\n");
 
-    // 4. Monta o prompt para o Claude
+    // 4. Monta o prompt para a IA
     const userInfo = profile
       ? `Usuário: ${profile.name || "Atleta"}, ${profile.idade || "idade não informada"} anos, ${profile.peso || "peso não informado"}kg, ${profile.altura || "altura não informada"}cm.`
       : "Perfil não informado.";
-
-    const freqMap = { "3X": 3, "5X": 5, "6X": 6, "DAILY": 7 };
-    const daysPerWeek = freqMap[frequency] || 3;
 
     const prompt = `Você é um personal trainer especialista. Crie um plano de treino semanal personalizado.
 
 ${userInfo}
 Objetivo: ${goal}
-Frequência: ${daysPerWeek} dias por semana
+Frequência: O usuário vai realizar exatamente ${daysPerWeek} treinos diferentes.
 
 Exercícios disponíveis no banco de dados:
 ${exerciseList}
 
-Crie um plano de ${daysPerWeek} dias de treino usando APENAS os exercícios listados acima.
-Distribua os grupos musculares de forma inteligente entre os dias.
-Para cada dia, inclua de 4 a 6 exercícios com séries e repetições adequadas ao objetivo.
+Crie um plano com exatamente ${daysPerWeek} blocos de treino usando APENAS os exercícios listados acima.
+Nomeie os blocos estritamente de forma numérica sequencial: "Treino 1", "Treino 2", "Treino 3", etc., até chegar ao limite de ${daysPerWeek}.
+Distribua os grupos musculares de forma inteligente entre os treinos para cobrir a rotina de forma eficiente.
+Para cada treino, inclua de 4 a 6 exercícios com séries e repetições adequadas ao objetivo.
 
 Responda APENAS com um JSON válido, sem texto extra, sem markdown, sem explicações. Formato exato:
 {
   "plan_name": "nome do plano",
   "goal": "${goal}",
-  "frequency": "${frequency}",
+  "frequency": "${daysPerWeek}X",
   "weekly_kcal_estimate": número estimado de calorias gastas na semana,
   "days": [
     {
-      "day": "Dia da semana",
-      "focus": "grupo muscular foco",
-      "duration_min": duração em minutos,
+      "day": "Treino 1",
+      "focus": "grupo muscular foco do Treino 1",
+      "duration_min": duration em minutos,
       "kcal_estimate": calorias estimadas,
       "exercises": [
         {
@@ -95,21 +99,24 @@ Responda APENAS com um JSON válido, sem texto extra, sem markdown, sem explica�
   "ai_tip": "dica geral personalizada para o usuário baseada no perfil dele"
 }`;
 
-    // 5. Chama o Ollama
-    const response = await ollama.chat({
-    model:    "llama3",
-    messages: [{ role: "user", content: prompt }],
+    // 5. Chama a API da Groq (Substituindo o Ollama)
+    // Usamos o modelo 'llama3-8b-8192' que é equivalente ao que você usava localmente, só que voando!
+    const response = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile", 
+      messages: [{ role: "user", content: prompt }],
+      // Força a Groq a responder estritamente em formato JSON
+      response_format: { type: "json_object" },
+      temperature: 0.2,
+      max_completion_tokens: 1500
     });
 
-    const raw = response.message.content;
-
-    // 6. Faz parse do JSON retornado
+    // 6. Faz parse do JSON retornado pela Groq
     let plan;
     try {
-      const raw = message.content[0].text.trim();
-      const cleaned = raw.replace(/```json|```/g, "").trim();
-      plan = JSON.parse(cleaned);
+      const raw = response.choices[0].message.content.trim();
+      plan = JSON.parse(raw);
     } catch (parseErr) {
+      console.error("Erro no parse da Groq:", parseErr);
       return res.status(500).json({ error: "Erro ao processar resposta da IA. Tente novamente." });
     }
 
@@ -117,9 +124,9 @@ Responda APENAS com um JSON válido, sem texto extra, sem markdown, sem explica�
     const { data: savedPlan, error: saveError } = await supabase
       .from("ai_plans")
       .insert({
-        user_id:   req.userId,
+        user_id: req.userId,
         goal,
-        frequency,
+        frequency: `${daysPerWeek}X`,
         plan_data: plan,
       })
       .select()
@@ -155,7 +162,6 @@ router.get("/plans", async (req, res, next) => {
 });
 
 // ─── GET /ai/plans/:id ────────────────────────────────────────────────────────
-// Retorna um plano específico
 router.get("/plans/:id", async (req, res, next) => {
   try {
     const { data, error } = await supabase

@@ -1,8 +1,11 @@
 {
     "name": "vittness",
     "scripts": {
-      "frontend": "cd frontend && npm start",
-      "backend":  "cd backend && npm run dev",
-      "dev": "npm run backend & npm run frontend"
+        "frontend": "cd frontend && npm start",
+        "backend": "cd backend && npm run dev",
+        "dev": "npm run backend & npm run frontend"
+    },
+    "dependencies": {
+        "groq-sdk": "^1.2.1"
     }
-  }
+}

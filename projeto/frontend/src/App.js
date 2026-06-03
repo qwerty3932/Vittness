@@ -272,118 +272,72 @@ function CircleProgress({ value, max, size = 80, stroke = 7, color = COLORS.acce
   );
 }
 
-// ─── AUTH STORE (in-memory, persists within session) ─────────────────────────
-const authDB = { users: [] };
-
-function authRegister(name, email, pass) {
-  if (!name.trim() || !email.trim() || !pass.trim()) return { ok: false, err: "Preencha todos os campos." };
-  if (!/\S+@\S+\.\S+/.test(email)) return { ok: false, err: "E-mail inválido." };
-  if (pass.length < 6) return { ok: false, err: "Senha deve ter ao menos 6 caracteres." };
-  if (authDB.users.find(u => u.email.toLowerCase() === email.toLowerCase()))
-    return { ok: false, err: "Este e-mail já está cadastrado." };
-  const user = { name: name.trim(), email: email.trim().toLowerCase(), pass };
-  authDB.users.push(user);
-  return { ok: true, user };
-}
-
-function authLogin(email, pass) {
-  if (!email.trim() || !pass.trim()) return { ok: false, err: "Preencha e-mail e senha." };
-  const user = authDB.users.find(u => u.email === email.trim().toLowerCase() && u.pass === pass);
-  if (!user) return { ok: false, err: "E-mail ou senha incorretos." };
-  return { ok: true, user };
-}
 
 // ─── SCREENS ────────────────────────────────────────────────────────────────
 
 function LoginScreen({ onLogin, onNav }) {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
-  const [showPass, setShowPass] = useState(false);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
-  function handleLogin() {
+  async function handleLoginSubmit(e) {
+    e.preventDefault();
     setErr("");
+    setLoading(false);
+    
+    if (!email || !pass) {
+      setErr("Preencha todos os campos.");
+      return;
+    }
+
     setLoading(true);
-    setTimeout(() => {
-      const res = authLogin(email, pass);
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password: pass }),
+      });
+      const data = await res.json();
+      
+      if (!res.ok) {
+        setErr(data.error || "Erro ao fazer login.");
+      } else {
+        localStorage.setItem("accessToken", data.accessToken);
+        onLogin(data.user);
+      }
+    } catch (e) {
+      setErr("Não foi possível conectar ao servidor.");
+    } finally {
       setLoading(false);
-      if (res.ok) onLogin(res.user);
-      else setErr(res.err);
-    }, 600);
+    }
   }
 
   return (
-    <div style={{ ...styles.screen, display: "flex", flexDirection: "column", justifyContent: "center", padding: "32px 24px", minHeight: "100vh", boxSizing: "border-box" }}>
-      <div style={{ textAlign: "center", marginBottom: 40 }}>
-        <div style={{ fontSize: 28, fontWeight: 900, color: COLORS.accent, letterSpacing: 4, textTransform: "uppercase", marginBottom: 8 }}>⚡ VITTNESS</div>
-        <div style={{ fontSize: 22, fontWeight: 700, color: COLORS.text }}>Sua melhor performance</div>
-        <div style={{ fontSize: 22, fontWeight: 700, color: COLORS.text }}>começa aqui.</div>
-        <div style={{ width: 40, height: 3, background: COLORS.accent, margin: "12px auto 0", borderRadius: 2 }} />
+    <div style={{ ...styles.screen, display: "flex", flexDirection: "column", justifyContent: "center", padding: 20, minHeight: "100vh" }}>
+      <div style={{ textAlign: "center", marginBottom: 30 }}>
+        <div style={{ ...styles.logo, fontSize: 32 }}>⚡ Vittness</div>
+        <div style={{ color: COLORS.textSecondary, marginTop: 8 }}>Acesse sua conta para treinar</div>
       </div>
 
-      <label style={styles.inputLabel}>E-mail</label>
-      <input
-        style={{ ...styles.input, borderColor: err ? COLORS.danger : COLORS.border }}
-        value={email} onChange={e => { setEmail(e.target.value); setErr(""); }}
-        placeholder="seu@email.com" type="email"
-        onKeyDown={e => e.key === "Enter" && handleLogin()}
-      />
+      <form onSubmit={handleLoginSubmit} style={styles.card}>
+        <label style={styles.inputLabel}>E-mail</label>
+        <input style={styles.input} type="email" placeholder="seu@email.com" value={email} onChange={e => setEmail(e.target.value)} />
 
-      <label style={styles.inputLabel}>Senha</label>
-      <div style={{ position: "relative", marginBottom: 8 }}>
-        <input
-          style={{ ...styles.input, marginBottom: 0, paddingRight: 44, borderColor: err ? COLORS.danger : COLORS.border }}
-          value={pass} onChange={e => { setPass(e.target.value); setErr(""); }}
-          placeholder="••••••••" type={showPass ? "text" : "password"}
-          onKeyDown={e => e.key === "Enter" && handleLogin()}
-        />
-        <button onClick={() => setShowPass(!showPass)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: 18 }}>
-          {showPass ? "🙈" : "👁"}
+        <label style={styles.inputLabel}>Senha</label>
+        <input style={styles.input} type="password" placeholder="••••••••" value={pass} onChange={e => setPass(e.target.value)} />
+
+        {err && <div style={{ color: COLORS.danger, fontSize: 13, marginBottom: 12 }}>⚠ {err}</div>}
+
+        <button type="submit" style={styles.btn} disabled={loading}>
+          {loading ? "Carregando..." : "Entrar"}
         </button>
+      </form>
+
+      <div style={{ textAlign: "center", marginTop: 16 }}>
+        <span style={{ color: COLORS.textMuted, fontSize: 14 }}>Não tem uma conta? </span>
+        <span style={{ color: COLORS.accent, cursor: "pointer", fontWeight: 700, fontSize: 14 }} onClick={() => onNav("register")}>Cadastre-se</span>
       </div>
-
-      {err && (
-        <div style={{ background: COLORS.danger + "18", border: `1px solid ${COLORS.danger}55`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: COLORS.danger, display: "flex", alignItems: "center", gap: 8 }}>
-          ⚠ {err}
-        </div>
-      )}
-
-      <div style={{ textAlign: "right", marginBottom: 20 }}>
-        <span style={{ fontSize: 13, color: COLORS.textSecondary, cursor: "pointer" }}>Esqueci minha senha</span>
-      </div>
-
-      <button
-        style={{ ...styles.btn, opacity: loading ? 0.7 : 1 }}
-        onClick={handleLogin}
-        disabled={loading}
-      >
-        {loading ? "ENTRANDO..." : "ENTRAR"}
-      </button>
-
-      <div style={{ textAlign: "center", marginTop: 28, fontSize: 14 }}>
-        Novo no Vittness?{" "}
-        <span onClick={() => onNav("register")} style={{ color: COLORS.accent, fontWeight: 700, cursor: "pointer" }}>Criar conta</span>
-      </div>
-
-      {authDB.users.length > 0 && (
-        <div style={{ marginTop: 24, background: COLORS.surface2, borderRadius: 8, padding: "12px 14px", border: `1px solid ${COLORS.border}` }}>
-          <div style={{ fontSize: 11, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 8 }}>CONTAS CADASTRADAS</div>
-          {authDB.users.map((u, i) => (
-            <div key={i} onClick={() => { setEmail(u.email); setPass(u.pass); setErr(""); }}
-              style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i > 0 ? `1px solid ${COLORS.border}` : "none", cursor: "pointer" }}>
-              <div style={{ width: 28, height: 28, borderRadius: "50%", background: COLORS.accent + "33", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: COLORS.accent }}>
-                {u.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)}
-              </div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{u.name}</div>
-                <div style={{ fontSize: 11, color: COLORS.textMuted }}>{u.email}</div>
-              </div>
-              <span style={{ marginLeft: "auto", fontSize: 11, color: COLORS.accent }}>usar →</span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -393,67 +347,78 @@ function RegisterScreen({ onLogin, onNav }) {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
-  function handleRegister() {
+  async function handleRegisterSubmit(e) {
+    e.preventDefault();
     setErr("");
-    if (form.pass !== form.confirm) { setErr("As senhas não coincidem."); return; }
+    
+    if (!form.name || !form.email || !form.pass) {
+      setErr("Preencha todos os campos obrigatórios.");
+      return;
+    }
+    if (form.pass !== form.confirm) {
+      setErr("As senhas não coincidem.");
+      return;
+    }
+
     setLoading(true);
-    setTimeout(() => {
-      const res = authRegister(form.name, form.email, form.pass);
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: form.name, email: form.email, password: form.pass }),
+      });
+      const data = await res.json();
+      
+      if (!res.ok) {
+        setErr(data.error || "Erro ao criar conta.");
+      } else {
+        // Login automático
+        const loginRes = await fetch(`${process.env.REACT_APP_API_URL}/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: form.email, password: form.pass }),
+        });
+        const loginData = await loginRes.json();
+        localStorage.setItem("accessToken", loginData.accessToken);
+        onLogin(loginData.user);
+      }
+    } catch (e) {
+      setErr("Não foi possível conectar ao servidor.");
+    } finally {
       setLoading(false);
-      if (res.ok) onLogin(res.user);
-      else setErr(res.err);
-    }, 700);
+    }
   }
 
-  const fields = [
-    ["NOME COMPLETO", "name", "Atleta de Elite", "text"],
-    ["E-MAIL", "email", "seu@email.com", "email"],
-    ["SENHA", "pass", "mín. 6 caracteres", "password"],
-    ["CONFIRMAR SENHA", "confirm", "repita a senha", "password"],
-  ];
-
   return (
-    <div style={{ ...styles.screen, padding: "24px", boxSizing: "border-box" }}>
-      <div style={{ textAlign: "center", marginBottom: 32 }}>
-        <div style={{ fontSize: 26, fontWeight: 900, color: COLORS.accent, letterSpacing: 4, marginBottom: 20 }}>⚡ VITTNESS</div>
-        <div style={{ fontSize: 28, fontWeight: 800 }}>Crie sua conta</div>
-        <div style={{ color: COLORS.textSecondary, fontSize: 15, marginTop: 6 }}>Comece sua jornada de performance hoje.</div>
+    <div style={{ ...styles.screen, display: "flex", flexDirection: "column", justifyContent: "center", padding: 20, minHeight: "100vh" }}>
+      <div style={{ textAlign: "center", marginBottom: 20 }}>
+        <div style={{ ...styles.logo, fontSize: 32 }}>⚡ Vittness</div>
+        <div style={{ color: COLORS.textSecondary, marginTop: 8 }}>Crie sua conta elite</div>
       </div>
 
-      {fields.map(([lbl, key, ph, type]) => (
-        <div key={key}>
-          <label style={styles.inputLabel}>{lbl}</label>
-          <input
-            style={{ ...styles.input, borderColor: err && (key === "pass" || key === "confirm") ? COLORS.danger : COLORS.border }}
-            placeholder={ph} type={type}
-            value={form[key]}
-            onChange={e => { setForm({ ...form, [key]: e.target.value }); setErr(""); }}
-          />
-        </div>
-      ))}
+      <form onSubmit={handleRegisterSubmit} style={styles.card}>
+        <label style={styles.inputLabel}>Nome Completo</label>
+        <input style={styles.input} type="text" placeholder="Seu nome" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
 
-      {err && (
-        <div style={{ background: COLORS.danger + "18", border: `1px solid ${COLORS.danger}55`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: COLORS.danger, display: "flex", alignItems: "center", gap: 8 }}>
-          ⚠ {err}
-        </div>
-      )}
+        <label style={styles.inputLabel}>E-mail</label>
+        <input style={styles.input} type="email" placeholder="seu@email.com" value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
 
-      <button
-        style={{ ...styles.btn, marginTop: 8, opacity: loading ? 0.7 : 1 }}
-        onClick={handleRegister}
-        disabled={loading}
-      >
-        {loading ? "CRIANDO CONTA..." : "CRIAR CONTA"}
-      </button>
+        <label style={styles.inputLabel}>Senha</label>
+        <input style={styles.input} type="password" placeholder="Mínimo 6 caracteres" value={form.pass} onChange={e => setForm({...form, pass: e.target.value})} />
 
-      <div style={{ textAlign: "center", marginTop: 20, fontSize: 14 }}>
-        Já tem uma conta?{" "}
-        <span onClick={() => onNav("login")} style={{ color: COLORS.accent, fontWeight: 700, cursor: "pointer" }}>Fazer login</span>
-      </div>
-      <div style={{ textAlign: "center", marginTop: 32, display: "flex", justifyContent: "center", gap: 24 }}>
-        {["PRIVACIDADE", "TERMOS", "SUPORTE"].map(t => (
-          <span key={t} style={{ fontSize: 11, color: COLORS.textMuted, letterSpacing: 1, cursor: "pointer" }}>{t}</span>
-        ))}
+        <label style={styles.inputLabel}>Confirmar Senha</label>
+        <input style={styles.input} type="password" placeholder="Repita a senha" value={form.confirm} onChange={e => setForm({...form, confirm: e.target.value})} />
+
+        {err && <div style={{ color: COLORS.danger, fontSize: 13, marginBottom: 12 }}>⚠ {err}</div>}
+
+        <button type="submit" style={styles.btn} disabled={loading}>
+          {loading ? "Criando..." : "Criar Conta"}
+        </button>
+      </form>
+
+      <div style={{ textAlign: "center", marginTop: 16 }}>
+        <span style={{ color: COLORS.textMuted, fontSize: 14 }}>Já tem conta? </span>
+        <span style={{ color: COLORS.accent, cursor: "pointer", fontWeight: 700, fontSize: 14 }} onClick={() => onNav("login")}>Fazer Login</span>
       </div>
     </div>
   );
