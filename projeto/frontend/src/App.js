@@ -362,6 +362,7 @@ function RegisterScreen({ onLogin, onNav }) {
 
     setLoading(true);
     try {
+      // 1. Registra as credenciais de autenticação no Supabase Auth
       const res = await fetch(`${process.env.REACT_APP_API_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -371,17 +372,48 @@ function RegisterScreen({ onLogin, onNav }) {
       
       if (!res.ok) {
         setErr(data.error || "Erro ao criar conta.");
-      } else {
-        // Login automático
-        const loginRes = await fetch(`${process.env.REACT_APP_API_URL}/auth/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: form.email, password: form.pass }),
-        });
-        const loginData = await loginRes.json();
-        localStorage.setItem("accessToken", loginData.accessToken);
-        onLogin(loginData.user);
+        return; // Interrompe o fluxo se houver erro no registro
       }
+
+      // 2. Realiza o login automático para obter o token de acesso
+      const loginRes = await fetch(`${process.env.REACT_APP_API_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: form.email, password: form.pass }),
+      });
+      const loginData = await loginRes.json();
+
+      if (!loginRes.ok) {
+        setErr("Conta criada com sucesso, mas houve um erro no login automático. Tente entrar manualmente.");
+        return;
+      }
+
+      // 3. Salva o token localmente
+      localStorage.setItem("accessToken", loginData.accessToken);
+
+      // 4. Salva o perfil na tabela pública (Caso você NÃO use a Trigger do banco)
+      // Certifique-se de que sua API possui a rota POST '/profiles' ou correspondente
+      try {
+        await fetch(`${process.env.REACT_APP_API_URL}/profiles`, {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${loginData.accessToken}` // Passa o token do usuário logado
+          },
+          body: JSON.stringify({ 
+            name: form.name,
+            email: form.email
+          }),
+        });
+      } catch (profileError) {
+        console.error("Erro ao criar registro de perfil:", profileError);
+        // Não bloqueamos o login do usuário se a autenticação já deu certo,
+        // mas o perfil pode ficar incompleto.
+      }
+
+      // 5. Autentica o usuário na aplicação global
+      onLogin(loginData.user);
+
     } catch (e) {
       setErr("Não foi possível conectar ao servidor.");
     } finally {
