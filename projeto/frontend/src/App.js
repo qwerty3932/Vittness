@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 
 const COLORS = {
   bg: "#0d0d0d",
@@ -774,7 +774,7 @@ function RecordScreen() {
 
 function ProgressScreen() {
   const days = ["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"];
-  const kcals = [0, 0, 0, 0, 0, 0, 0];
+  const _kcals = [0, 0, 0, 0, 0, 0, 0];
   return (
     <div style={styles.screen}>
       <div style={{ padding: "20px 20px 0" }}>
