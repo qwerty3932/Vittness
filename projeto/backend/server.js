@@ -22,7 +22,8 @@ app.use(helmet());
 app.use(cors({
   origin: [
     "https://vittness.vercel.app",  // substitui pelo URL real do seu site
-    "http://localhost:3000",             // mantém o desenvolvimento local funcionando
+    "https://vittness-sarassss-projects.vercel.app/",
+    "http://localhost:3000"             // mantém o desenvolvimento local funcionando
   ],
   credentials: true,
 }));
