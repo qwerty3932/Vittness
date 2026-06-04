@@ -20,11 +20,13 @@ const PORT = process.env.PORT || 3001;
 // ─── Middlewares ──────────────────────────────────────────────────────────────
 app.use(helmet());
 app.use(cors({
-  origin: [
-    "https://vittness.vercel.app",  // substitui pelo URL real do seu site
-    "https://vittness-sarassss-projects.vercel.app/",
-    "http://localhost:3000"             // mantém o desenvolvimento local funcionando
-  ],
+  origin: function(origin, callback) {
+    if (!origin || origin.endsWith(".vercel.app") || origin === "http://localhost:3000") {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true,
 }));
 app.use(express.json());
