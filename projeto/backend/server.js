@@ -58,6 +58,10 @@ app.use((err, req, res, next) => {
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────
-app.listen(PORT, () =>
-  console.log(`✅ Vittness Backend rodando em http://localhost:${PORT}`)
-);
+if (require.main === module) {
+  app.listen(PORT, () =>
+    console.log(`✅ Vittness Backend rodando em http://localhost:${PORT}`)
+  );
+}
+
+module.exports = app;
