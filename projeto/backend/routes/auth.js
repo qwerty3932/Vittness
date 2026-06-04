@@ -20,6 +20,34 @@ const supabase = createClient(
 const { requireAuth } = require("../middleware/auth");
 const router = express.Router();
 
+// ─── PATCH /auth/profiles ──────────────────────────────────────────────────────────
+router.patch("/", requireAuth, async (req, res, next) => {
+  try {
+    const { name, idade, peso, altura, objetivo } = req.body;
+
+    if (!name?.trim())
+      return res.status(400).json({ error: "Nome é obrigatório." });
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        name: name.trim(),
+        idade:    idade    || null,
+        peso:     peso     || null,
+        altura:   altura   || null,
+        objetivo: objetivo || null,
+      })
+      .eq("id", req.userId);  // req.userId vem do seu middleware requireAuth
+
+    if (error)
+      return res.status(500).json({ error: error.message });
+
+    res.json({ message: "Perfil atualizado com sucesso." });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ─── POST /auth/register ──────────────────────────────────────────────────────
 router.post("/register", async (req, res, next) => {
   try {

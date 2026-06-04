@@ -6,11 +6,13 @@ const rateLimit = require("express-rate-limit");
 const path    = require("path");
 
 const authRoutes      = require("./routes/auth");
+const profilesRouter = require("./routes/auth");
 const userRoutes      = require("./routes/user");
 const nutritionRoutes = require("./routes/nutrition");
 const routineRoutes   = require("./routes/routine");
 const exerciseRoutes  = require("./routes/exercises");
 const aiRoutes        = require("./routes/ai");
+
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -34,6 +36,7 @@ app.use("/nutrition", nutritionRoutes);
 app.use("/routine",   routineRoutes);
 app.use("/exercises", exerciseRoutes);
 app.use("/ai",        aiRoutes);
+app.use("/profiles", profilesRouter);
 
 app.get("/health", (req, res) =>
   res.json({ status: "ok", timestamp: new Date().toISOString() })

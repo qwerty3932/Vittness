@@ -857,12 +857,41 @@ function EditProfileScreen({ user, onSave, onBack }) {
     "Musculação",
   ];
 
-  function handleSave() {
-    if (!form.name.trim()) return;
-    onSave(form);
+async function handleSave() {
+  if (!form.name.trim()) return;
+
+  const token = localStorage.getItem("accessToken");
+
+  try {
+    const res = await fetch(`${process.env.REACT_APP_API_URL}/profiles`, {
+      method: "PATCH",           // ou "PUT", dependendo da sua API
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        name: form.name,
+        idade: form.idade,
+        peso: form.peso,
+        altura: form.altura,
+        objetivo: form.objetivo,
+      }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.error || "Erro ao salvar perfil.");
+      return;
+    }
+
+    onSave(form);   // atualiza o estado local só após confirmar no banco
     setSaved(true);
     setTimeout(() => { setSaved(false); onBack(); }, 900);
+
+  } catch (e) {
+    alert("Não foi possível conectar ao servidor.");
   }
+}
 
   return (
     <div style={{ ...styles.screen, paddingBottom: 100 }}>
