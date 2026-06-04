@@ -774,7 +774,7 @@ function RecordScreen() {
 
 function ProgressScreen() {
   const days = ["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"];
-  const _kcals = [0, 0, 0, 0, 0, 0, 0];
+
   return (
     <div style={styles.screen}>
       <div style={{ padding: "20px 20px 0" }}>
