@@ -21,9 +21,8 @@ const PORT = process.env.PORT || 3001;
 app.use(helmet());
 app.use(cors({
   origin: [
-    "https://seu-projeto.vercel.app",  // substitui pelo URL real do seu site
+    "https://vittness.vercel.app",  // substitui pelo URL real do seu site
     "http://localhost:3000",             // mantém o desenvolvimento local funcionando
-    "https://vittness-903kzn93w-sarassss-projects.vercel.app"
   ],
   credentials: true,
 }));
