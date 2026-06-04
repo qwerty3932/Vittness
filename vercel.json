@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "backend/server.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "frontend/package.json",
+      "use": "@vercel/static-build",
+      "config": { "distDir": "build" }
+    }
+  ],
+  "routes": [
+    { "src": "/auth/(.*)",      "dest": "backend/server.js" },
+    { "src": "/profiles/(.*)",  "dest": "backend/server.js" },
+    { "src": "/user/(.*)",      "dest": "backend/server.js" },
+    { "src": "/nutrition/(.*)", "dest": "backend/server.js" },
+    { "src": "/routine/(.*)",   "dest": "backend/server.js" },
+    { "src": "/exercises/(.*)", "dest": "backend/server.js" },
+    { "src": "/ai/(.*)",        "dest": "backend/server.js" },
+    { "src": "/health",         "dest": "backend/server.js" },
+    { "src": "/(.*)",           "dest": "frontend/$1" }
+  ]
+}
