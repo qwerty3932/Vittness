@@ -19,7 +19,13 @@ const PORT = process.env.PORT || 3001;
 
 // ─── Middlewares ──────────────────────────────────────────────────────────────
 app.use(helmet());
-app.use(cors({ origin: "*" }));
+app.use(cors({
+  origin: [
+    "https://seu-projeto.vercel.app",  // substitui pelo URL real do seu site
+    "http://localhost:3000"             // mantém o desenvolvimento local funcionando
+  ],
+  credentials: true,
+}));
 app.use(express.json());
 
 const limiter = rateLimit({
