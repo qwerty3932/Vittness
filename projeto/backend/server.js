@@ -18,7 +18,6 @@ const app  = express();
 const PORT = process.env.PORT || 3001;
 
 // ─── Middlewares ──────────────────────────────────────────────────────────────
-app.use(helmet());
 app.use(cors({
   origin: function(origin, callback) {
     if (!origin || origin.endsWith(".vercel.app") || origin === "http://localhost:3000") {
@@ -29,6 +28,7 @@ app.use(cors({
   },
   credentials: true,
 }));
+app.use(helmet());
 app.use(express.json());
 
 const limiter = rateLimit({
