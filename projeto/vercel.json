@@ -12,14 +12,14 @@
     }
   ],
   "routes": [
-    { "src": "/auth/(.*)",      "dest": "backend/server.js" },
-    { "src": "/profiles/(.*)",  "dest": "backend/server.js" },
-    { "src": "/user/(.*)",      "dest": "backend/server.js" },
-    { "src": "/nutrition/(.*)", "dest": "backend/server.js" },
-    { "src": "/routine/(.*)",   "dest": "backend/server.js" },
-    { "src": "/exercises/(.*)", "dest": "backend/server.js" },
-    { "src": "/ai/(.*)",        "dest": "backend/server.js" },
-    { "src": "/health",         "dest": "backend/server.js" },
-    { "src": "/(.*)", "dest": "frontend/$1" }
+    { "src": "/auth/(.*)",      "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
+    { "src": "/profiles/(.*)",  "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
+    { "src": "/user/(.*)",      "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
+    { "src": "/nutrition/(.*)", "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
+    { "src": "/routine/(.*)",   "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
+    { "src": "/exercises/(.*)", "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
+    { "src": "/ai/(.*)",        "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
+    { "src": "/health",         "methods": ["GET","OPTIONS"],                               "dest": "backend/server.js" },
+    { "src": "/(.*)",           "dest": "frontend/$1" }
   ]
 }
