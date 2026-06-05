@@ -9,7 +9,7 @@ router.get("/", async (req, res, next) => {
   try {
     const { data, error } = await supabase
       .from("routines")
-      .select("*, routine_exercises(*)")
+      .select("*, routine_exercises(*), plan_data")
       .eq("user_id", req.userId)
       .order("created_at", { ascending: false });
 
@@ -20,13 +20,13 @@ router.get("/", async (req, res, next) => {
 
 router.post("/", async (req, res, next) => {
   try {
-    const { name, goal, frequency, exercises = [] } = req.body;
+    const { name, goal, frequency, exercises = [], plan_data } = req.body;
     if (!name?.trim())
       return res.status(400).json({ error: "Nome da rotina é obrigatório." });
 
     const { data: routine, error } = await supabase
       .from("routines")
-      .insert({ user_id: req.userId, name: name.trim(), goal: goal || null, frequency: frequency || null })
+      .insert({ user_id: req.userId, name: name.trim(), goal: goal || null, frequency: frequency || null, plan_data: plan_data || null })
       .select()
       .single();
 

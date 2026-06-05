@@ -681,93 +681,418 @@ function NutritionScreen() {
 }
 
 function RecordScreen() {
+  const [tab, setTab] = useState("gerar"); // "gerar" | "salvas"
   const [goal, setGoal] = useState("Perda de Gordura");
-  const [freq, setFreq] = useState("5X");
-  const [generated, setGenerated] = useState(false);
-  const [notifExe, setNotifExe] = useState(true);
-  const [notifWater, setNotifWater] = useState(true);
-  const [notifFocus, setNotifFocus] = useState(false);
+  const [freq, setFreq] = useState("3");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [plan, setPlan] = useState(null);
+  const [expandedDay, setExpandedDay] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [savedRoutines, setSavedRoutines] = useState([]);
+  const [loadingRoutines, setLoadingRoutines] = useState(false);
+  const [expandedRoutine, setExpandedRoutine] = useState(null);
+  const [expandedRoutineDay, setExpandedRoutineDay] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+
   const goals = ["Perda de Gordura", "Musculação"];
-  const freqs = ["3X", "5X", "6X", "DAILY"];
+  const freqs = ["3", "4", "5", "6"];
+
+  const token = () => localStorage.getItem("accessToken");
+  const API = process.env.REACT_APP_API_URL;
+
+  async function handleGenerate() {
+    setError("");
+    setPlan(null);
+    setSaveSuccess(false);
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/ai/generate-plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({ goal, frequency: parseInt(freq, 10) }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Erro ao gerar plano."); return; }
+      setPlan(data.plan);
+      setExpandedDay(0);
+    } catch (e) {
+      setError("Não foi possível conectar ao servidor.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSaveRoutine() {
+    if (!plan) return;
+    setSaving(true);
+    setError("");
+    try {
+      // Constrói os exercícios de todos os dias do plano para salvar na rotina
+      const allExercises = plan.days.flatMap((day) =>
+        day.exercises.map((ex) => ({
+          name: ex.name,
+          sets: ex.sets,
+          reps: String(ex.reps),
+        }))
+      );
+
+      const res = await fetch(`${API}/routine`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({
+          name: plan.plan_name,
+          goal: plan.goal,
+          frequency: plan.frequency,
+          exercises: allExercises,
+          // Salva os dados completos do plano IA como metadata
+          plan_data: plan,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Erro ao salvar rotina."); return; }
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (e) {
+      setError("Não foi possível salvar a rotina.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function loadSavedRoutines() {
+    setLoadingRoutines(true);
+    try {
+      const res = await fetch(`${API}/routine`, {
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      const data = await res.json();
+      if (res.ok) setSavedRoutines(data.routines || []);
+    } catch (e) {
+      // silently fail
+    } finally {
+      setLoadingRoutines(false);
+    }
+  }
+
+  async function handleDeleteRoutine(id) {
+    setDeletingId(id);
+    try {
+      const res = await fetch(`${API}/routine/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      if (res.ok) {
+        setSavedRoutines(prev => prev.filter(r => r.id !== id));
+        if (expandedRoutine === id) setExpandedRoutine(null);
+      }
+    } catch (e) { /* ignore */ }
+    finally { setDeletingId(null); }
+  }
+
+  // Carrega rotinas ao entrar na aba
+  const prevTab = useState(tab)[0];
+  function handleTabChange(t) {
+    setTab(t);
+    if (t === "salvas") loadSavedRoutines();
+  }
 
   return (
     <div style={styles.screen}>
+      {/* Header */}
       <div style={{ padding: "20px 20px 0" }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.accent, letterSpacing: 2, marginBottom: 4 }}>✦ ELITE ROUTINE ENGINE</div>
         <div style={{ fontSize: 28, fontWeight: 900, lineHeight: 1.1 }}>Desenhe sua<br />Performance.</div>
-        <div style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 8 }}>Defina seus objetivos e deixe nossa IA processar o plano ideal.</div>
+        <div style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 8 }}>Gere planos com IA e salve suas rotinas.</div>
       </div>
 
-      <div style={styles.card}>
-        <div style={styles.label}>Objetivo Primário</div>
-        {goals.map(g => (
-          <div key={g} onClick={() => setGoal(g)} style={{
-            ...styles.row, padding: "13px 14px", borderRadius: 8, marginTop: 8, cursor: "pointer",
-            background: goal === g ? COLORS.accent + "22" : COLORS.surface2,
-            border: `1.5px solid ${goal === g ? COLORS.accent : COLORS.border}`,
-          }}>
-            <span style={{ fontWeight: 700, fontSize: 15, color: goal === g ? COLORS.accent : COLORS.text }}>{g}</span>
-            {goal === g && <span style={{ color: COLORS.accent, fontSize: 18 }}>✓</span>}
-          </div>
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 0, margin: "16px 16px 0", background: COLORS.surface2, borderRadius: 10, padding: 4 }}>
+        {[["gerar", "⚡ Gerar Plano"], ["salvas", "🗓 Minhas Rotinas"]].map(([id, lbl]) => (
+          <button key={id} onClick={() => handleTabChange(id)} style={{
+            flex: 1, padding: "10px 0", borderRadius: 8, border: "none", fontFamily: "inherit",
+            background: tab === id ? COLORS.accent : "transparent",
+            color: tab === id ? "#000" : COLORS.textMuted,
+            fontWeight: 800, fontSize: 12, cursor: "pointer", letterSpacing: 1, transition: "all 0.15s",
+          }}>{lbl}</button>
         ))}
       </div>
 
-      <div style={styles.card}>
-        <div style={styles.label}>Frequência Semanal</div>
-        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-          {freqs.map(f => (
-            <button key={f} onClick={() => setFreq(f)} style={{
-              flex: 1, padding: "10px 0", borderRadius: 8, border: `1.5px solid ${freq === f ? COLORS.accent : COLORS.border}`,
-              background: freq === f ? COLORS.accent : COLORS.surface2, color: freq === f ? "#000" : COLORS.textSecondary,
-              fontWeight: 800, fontSize: 12, cursor: "pointer", letterSpacing: 1, fontFamily: "inherit",
-            }}>{f}</button>
-          ))}
-        </div>
-      </div>
+      {/* ── TAB: GERAR ── */}
+      {tab === "gerar" && (
+        <>
+          <div style={styles.card}>
+            <div style={styles.label}>Objetivo Primário</div>
+            {goals.map(g => (
+              <div key={g} onClick={() => setGoal(g)} style={{
+                ...styles.row, padding: "13px 14px", borderRadius: 8, marginTop: 8, cursor: "pointer",
+                background: goal === g ? COLORS.accent + "22" : COLORS.surface2,
+                border: `1.5px solid ${goal === g ? COLORS.accent : COLORS.border}`,
+              }}>
+                <span style={{ fontWeight: 700, fontSize: 15, color: goal === g ? COLORS.accent : COLORS.text }}>{g}</span>
+                {goal === g && <span style={{ color: COLORS.accent, fontSize: 18 }}>✓</span>}
+              </div>
+            ))}
+          </div>
 
-      <div style={{ padding: "0 16px" }}>
-        <button style={{ ...styles.btn, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setGenerated(true)}>
-          ⚡ GERAR PLANO IA
-        </button>
-      </div>
+          <div style={styles.card}>
+            <div style={styles.label}>Frequência Semanal (dias)</div>
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              {freqs.map(f => (
+                <button key={f} onClick={() => setFreq(f)} style={{
+                  flex: 1, padding: "12px 0", borderRadius: 8, border: `1.5px solid ${freq === f ? COLORS.accent : COLORS.border}`,
+                  background: freq === f ? COLORS.accent : COLORS.surface2, color: freq === f ? "#000" : COLORS.textSecondary,
+                  fontWeight: 800, fontSize: 14, cursor: "pointer", letterSpacing: 1, fontFamily: "inherit",
+                }}>{f}x</button>
+              ))}
+            </div>
+          </div>
 
-      {generated && (
-        <div style={styles.card}>
-          <div style={{ ...styles.row, marginBottom: 12 }}>
-            <div style={styles.label}>Sugestão Semanal</div>
-            <span style={{ ...styles.badge(COLORS.accent), fontSize: 10 }}>OTIMIZADO</span>
+          {error && (
+            <div style={{ ...styles.card, borderColor: COLORS.danger + "55", background: COLORS.danger + "11" }}>
+              <div style={{ fontSize: 13, color: COLORS.danger }}>⚠ {error}</div>
+            </div>
+          )}
+
+          <div style={{ padding: "0 16px" }}>
+            <button
+              style={{ ...styles.btn, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: loading ? 0.7 : 1 }}
+              onClick={handleGenerate}
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <span style={{ display: "inline-block", width: 16, height: 16, border: "2px solid #00000044", borderTop: "2px solid #000", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                  GERANDO SEU PLANO...
+                </>
+              ) : "⚡ GERAR PLANO IA"}
+            </button>
           </div>
-          <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 4 }}>SEGUNDA-FEIRA</div>
-          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 6 }}>Peitoral e Tríceps (Hipertrofia)</div>
-          <div style={{ display: "flex", gap: 16, marginBottom: 12 }}>
-            <span style={{ fontSize: 13, color: COLORS.textMuted }}>⏱ 75 min</span>
-            <span style={{ fontSize: 13, color: COLORS.textMuted }}>🔥 640 kcal</span>
-          </div>
-          <div style={{ background: COLORS.surface3, borderRadius: 8, padding: 12 }}>
-            <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>✦ ANÁLISE DA IA VITTNESS</div>
-            <div style={{ fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.6 }}>Seu plano foi ajustado para maximizar a síntese proteica. Recomendamos um excedente calórico de 300kcal nos dias de treino e ingestão de 2.0g/kg de proteína.</div>
-          </div>
-        </div>
+
+          {/* Plano gerado */}
+          {plan && (
+            <>
+              {/* Resumo do plano */}
+              <div style={{ ...styles.card, borderColor: COLORS.accent + "55", background: COLORS.accent + "08" }}>
+                <div style={{ ...styles.row, marginBottom: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 17, fontWeight: 900, color: COLORS.accent }}>{plan.plan_name}</div>
+                    <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>{plan.goal} · {plan.frequency}</div>
+                  </div>
+                  <span style={{ ...styles.badge(COLORS.accent), fontSize: 10 }}>IA</span>
+                </div>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <div style={{ background: COLORS.surface2, borderRadius: 8, padding: "8px 14px", flex: 1, textAlign: "center" }}>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: COLORS.accent }}>{plan.days?.length || 0}</div>
+                    <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1 }}>TREINOS</div>
+                  </div>
+                  <div style={{ background: COLORS.surface2, borderRadius: 8, padding: "8px 14px", flex: 1, textAlign: "center" }}>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: COLORS.accent }}>{plan.weekly_kcal_estimate?.toLocaleString() || "—"}</div>
+                    <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1 }}>KCAL/SEM</div>
+                  </div>
+                  <div style={{ background: COLORS.surface2, borderRadius: 8, padding: "8px 14px", flex: 1, textAlign: "center" }}>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: COLORS.accent }}>{plan.days?.reduce((s, d) => s + (d.duration_min || 0), 0) || "—"}</div>
+                    <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1 }}>MIN/SEM</div>
+                  </div>
+                </div>
+                {plan.ai_tip && (
+                  <div style={{ background: COLORS.surface3, borderRadius: 8, padding: 12, marginTop: 10 }}>
+                    <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>✦ DICA DA IA</div>
+                    <div style={{ fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.6 }}>{plan.ai_tip}</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Dias do plano */}
+              {plan.days?.map((day, idx) => (
+                <div key={idx} style={{ ...styles.card, padding: 0, overflow: "hidden" }}>
+                  <div
+                    onClick={() => setExpandedDay(expandedDay === idx ? null : idx)}
+                    style={{ ...styles.row, padding: "14px 16px", cursor: "pointer" }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 800 }}>{day.day}</div>
+                      <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>{day.focus}</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700 }}>⏱ {day.duration_min}min</div>
+                        <div style={{ fontSize: 11, color: COLORS.textMuted }}>🔥 {day.kcal_estimate} kcal</div>
+                      </div>
+                      <span style={{ color: COLORS.accent, fontSize: 16, transition: "transform 0.2s", display: "inline-block", transform: expandedDay === idx ? "rotate(90deg)" : "rotate(0deg)" }}>›</span>
+                    </div>
+                  </div>
+
+                  {expandedDay === idx && (
+                    <div style={{ borderTop: `1px solid ${COLORS.border}`, padding: "12px 16px" }}>
+                      {day.exercises.map((ex, j) => (
+                        <div key={j} style={{ padding: "10px 0", borderBottom: j < day.exercises.length - 1 ? `1px solid ${COLORS.border}` : "none" }}>
+                          <div style={{ ...styles.row }}>
+                            <div style={{ fontSize: 14, fontWeight: 700 }}>{ex.name}</div>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <span style={{ ...styles.badge(COLORS.accent), fontSize: 10 }}>{ex.sets}x{ex.reps}</span>
+                              <span style={{ ...styles.badge(COLORS.info), fontSize: 10 }}>⏸{ex.rest_seconds}s</span>
+                            </div>
+                          </div>
+                          {ex.tip && (
+                            <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4, lineHeight: 1.5 }}>💡 {ex.tip}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Botão salvar */}
+              <div style={{ padding: "4px 16px 16px" }}>
+                {saveSuccess ? (
+                  <div style={{ ...styles.btn, background: "#4caf50", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, cursor: "default" }}>
+                    ✓ ROTINA SALVA COM SUCESSO!
+                  </div>
+                ) : (
+                  <button
+                    style={{ ...styles.btn, background: COLORS.accentDark, opacity: saving ? 0.7 : 1 }}
+                    onClick={handleSaveRoutine}
+                    disabled={saving}
+                  >
+                    {saving ? "SALVANDO..." : "💾 SALVAR ESTA ROTINA"}
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </>
       )}
 
-      <div style={styles.card}>
-        <div style={styles.label}>Configurações de Lembretes</div>
-        {[
-          ["⚡ Exercícios", notifExe, setNotifExe, "06:30"],
-          ["💧 Hidratação", notifWater, setNotifWater, "A cada 2 horas"],
-          ["🎯 Modo Foco", notifFocus, setNotifFocus, null],
-        ].map(([lbl, val, setter, detail]) => (
-          <div key={lbl} style={{ ...styles.row, padding: "12px 0", borderBottom: `1px solid ${COLORS.border}` }}>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 700 }}>{lbl}</div>
-              {detail && <div style={{ fontSize: 12, color: COLORS.textMuted }}>{detail}</div>}
+      {/* ── TAB: MINHAS ROTINAS ── */}
+      {tab === "salvas" && (
+        <>
+          {loadingRoutines ? (
+            <div style={{ textAlign: "center", padding: "60px 0", color: COLORS.textMuted }}>
+              <div style={{ fontSize: 13, letterSpacing: 1 }}>Carregando rotinas...</div>
             </div>
-            <div onClick={() => setter(!val)} style={{ width: 44, height: 24, borderRadius: 12, background: val ? COLORS.accent : COLORS.surface3, cursor: "pointer", position: "relative", transition: "background 0.2s" }}>
-              <div style={{ position: "absolute", top: 3, left: val ? 22 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
+          ) : savedRoutines.length === 0 ? (
+            <div style={styles.card}>
+              <EmptyState
+                icon="🗓"
+                title="Nenhuma rotina salva"
+                subtitle="Gere um plano com IA e salve sua rotina para visualizá-la aqui."
+                btnLabel="⚡ GERAR PLANO"
+                onBtn={() => handleTabChange("gerar")}
+              />
             </div>
-          </div>
-        ))}
-      </div>
+          ) : (
+            savedRoutines.map(routine => {
+              const planData = routine.plan_data;
+              const isExpanded = expandedRoutine === routine.id;
+              const createdAt = new Date(routine.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
+
+              return (
+                <div key={routine.id} style={{ ...styles.card, padding: 0, overflow: "hidden" }}>
+                  {/* Cabeçalho da rotina */}
+                  <div style={{ ...styles.row, padding: "14px 16px", cursor: "pointer" }} onClick={() => { setExpandedRoutine(isExpanded ? null : routine.id); setExpandedRoutineDay(null); }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 15, fontWeight: 800 }}>{routine.name}</div>
+                      <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>
+                        {routine.goal} · {routine.frequency} · {createdAt}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteRoutine(routine.id); }}
+                        disabled={deletingId === routine.id}
+                        style={{ background: "none", border: "none", color: deletingId === routine.id ? COLORS.textMuted : COLORS.danger, cursor: "pointer", fontSize: 15, padding: "2px 6px", borderRadius: 6 }}
+                      >
+                        {deletingId === routine.id ? "..." : "🗑"}
+                      </button>
+                      <span style={{ color: COLORS.accent, fontSize: 16, transition: "transform 0.2s", display: "inline-block", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>›</span>
+                    </div>
+                  </div>
+
+                  {/* Conteúdo expandido */}
+                  {isExpanded && (
+                    <div style={{ borderTop: `1px solid ${COLORS.border}` }}>
+                      {/* Stats rápidos se tiver plan_data */}
+                      {planData && (
+                        <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${COLORS.border}` }}>
+                          {[
+                            [planData.days?.length || 0, "TREINOS"],
+                            [planData.weekly_kcal_estimate?.toLocaleString() || "—", "KCAL/SEM"],
+                            [planData.days?.reduce((s, d) => s + (d.duration_min || 0), 0) || "—", "MIN/SEM"],
+                          ].map(([v, l], i) => (
+                            <div key={l} style={{ flex: 1, textAlign: "center", padding: "10px 0", borderRight: i < 2 ? `1px solid ${COLORS.border}` : "none" }}>
+                              <div style={{ fontSize: 15, fontWeight: 900, color: COLORS.accent }}>{v}</div>
+                              <div style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 1 }}>{l}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Treinos da rotina (usando plan_data se disponível) */}
+                      {planData?.days ? (
+                        planData.days.map((day, idx) => (
+                          <div key={idx} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+                            <div
+                              onClick={() => setExpandedRoutineDay(expandedRoutineDay === `${routine.id}-${idx}` ? null : `${routine.id}-${idx}`)}
+                              style={{ ...styles.row, padding: "12px 16px", cursor: "pointer" }}
+                            >
+                              <div>
+                                <div style={{ fontSize: 14, fontWeight: 700 }}>{day.day}</div>
+                                <div style={{ fontSize: 11, color: COLORS.textMuted }}>{day.focus}</div>
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <span style={{ fontSize: 11, color: COLORS.accent }}>⏱{day.duration_min}min</span>
+                                <span style={{ color: COLORS.accent, fontSize: 14, transition: "transform 0.2s", display: "inline-block", transform: expandedRoutineDay === `${routine.id}-${idx}` ? "rotate(90deg)" : "rotate(0deg)" }}>›</span>
+                              </div>
+                            </div>
+
+                            {expandedRoutineDay === `${routine.id}-${idx}` && (
+                              <div style={{ padding: "0 16px 12px" }}>
+                                {day.exercises.map((ex, j) => (
+                                  <div key={j} style={{ padding: "8px 0", borderBottom: j < day.exercises.length - 1 ? `1px solid ${COLORS.border}` : "none" }}>
+                                    <div style={{ ...styles.row }}>
+                                      <div style={{ fontSize: 13, fontWeight: 700 }}>{ex.name}</div>
+                                      <span style={{ ...styles.badge(COLORS.accent), fontSize: 10 }}>{ex.sets}x{ex.reps}</span>
+                                    </div>
+                                    {ex.tip && <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 3 }}>💡 {ex.tip}</div>}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      ) : (
+                        // Fallback: exibe exercícios da routine_exercises se não houver plan_data
+                        routine.routine_exercises?.length > 0 && (
+                          <div style={{ padding: "12px 16px" }}>
+                            {routine.routine_exercises.map((ex, j) => (
+                              <div key={j} style={{ ...styles.row, padding: "8px 0", borderBottom: j < routine.routine_exercises.length - 1 ? `1px solid ${COLORS.border}` : "none" }}>
+                                <div style={{ fontSize: 13, fontWeight: 700 }}>{ex.name}</div>
+                                <span style={{ ...styles.badge(COLORS.accent), fontSize: 10 }}>{ex.sets}x{ex.reps}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      )}
+
+                      {planData?.ai_tip && (
+                        <div style={{ margin: "0 16px 14px", background: COLORS.surface3, borderRadius: 8, padding: 12 }}>
+                          <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>✦ DICA DA IA</div>
+                          <div style={{ fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.6 }}>{planData.ai_tip}</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </>
+      )}
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
