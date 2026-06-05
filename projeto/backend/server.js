@@ -6,12 +6,12 @@ const rateLimit = require("express-rate-limit");
 const path    = require("path");
 
 const authRoutes      = require("./routes/auth");
-const profilesRouter = require("./routes/auth");
 const userRoutes      = require("./routes/user");
 const nutritionRoutes = require("./routes/nutrition");
 const routineRoutes   = require("./routes/routine");
 const exerciseRoutes  = require("./routes/exercises");
 const aiRoutes        = require("./routes/ai");
+const profileRoutes = require("./routes/ai");
 
 
 const app  = express();
@@ -45,8 +45,7 @@ app.use("/nutrition", nutritionRoutes);
 app.use("/routine",   routineRoutes);
 app.use("/exercises", exerciseRoutes);
 app.use("/ai",        aiRoutes);
-app.use("/profiles", profilesRouter);
-
+app.use("/profile", profileRoutes)
 app.get("/health", (req, res) =>
   res.json({ status: "ok", timestamp: new Date().toISOString() })
 );
