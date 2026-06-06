@@ -695,6 +695,17 @@ function RecordScreen() {
   const [expandedRoutine, setExpandedRoutine] = useState(null);
   const [expandedRoutineDay, setExpandedRoutineDay] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editedPlan, setEditedPlan] = useState(null);
+  const [availableExercises, setAvailableExercises] = useState([]);
+  // editingCell: { dayIdx, exIdx, field } — qual célula está em edição inline
+  const [editingCell, setEditingCell] = useState(null);
+  // substituição: { dayIdx, exIdx } — qual exercício está sendo substituído
+  const [replacingEx, setReplacingEx] = useState(null);
+  // aba ativa no painel de substituição: "banco" | "custom"
+  const [replaceTab, setReplaceTab] = useState("banco");
+  // formulário para criar exercício customizado
+  const [customExForm, setCustomExForm] = useState({ name: "", sets: "3", reps: "12", description: "" });
 
   const goals = ["Perda de Gordura", "Musculação"];
   const freqs = ["3", "4", "5", "6"];
@@ -716,6 +727,9 @@ function RecordScreen() {
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Erro ao gerar plano."); return; }
       setPlan(data.plan);
+      setEditedPlan(JSON.parse(JSON.stringify(data.plan))); // deep clone editável
+      setAvailableExercises(data.available_exercises || []);
+      setEditMode(false);
       setExpandedDay(0);
     } catch (e) {
       setError("Não foi possível conectar ao servidor.");
@@ -724,8 +738,82 @@ function RecordScreen() {
     }
   }
 
+  // Helpers de edição do plano
+  function updateExerciseField(dayIdx, exIdx, field, value) {
+    setEditedPlan(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.days[dayIdx].exercises[exIdx][field] = value;
+      return next;
+    });
+  }
+
+  function replaceExercise(dayIdx, exIdx, newExName) {
+    const found = availableExercises.find(e => e.name === newExName);
+    if (!found) return;
+    setEditedPlan(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const old = next.days[dayIdx].exercises[exIdx];
+      next.days[dayIdx].exercises[exIdx] = {
+        ...old,
+        name: found.name,
+        description: found.description,
+      };
+      return next;
+    });
+    setReplacingEx(null);
+    setReplaceTab("banco");
+  }
+
+  function replaceWithCustom(dayIdx, exIdx) {
+    const { name, sets, reps, description } = customExForm;
+    if (!name.trim()) return;
+    setEditedPlan(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.days[dayIdx].exercises[exIdx] = {
+        name: name.trim(),
+        sets: sets || "3",
+        reps: reps || "12",
+        description: description.trim(),
+      };
+      return next;
+    });
+    setReplacingEx(null);
+    setReplaceTab("banco");
+    setCustomExForm({ name: "", sets: "3", reps: "12", description: "" });
+  }
+
+  function removeExercise(dayIdx, exIdx) {
+    setEditedPlan(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.days[dayIdx].exercises.splice(exIdx, 1);
+      return next;
+    });
+  }
+
+  function addExercise(dayIdx) {
+    setEditedPlan(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.days[dayIdx].exercises.push({ name: "Novo Exercício", sets: 3, reps: "12", description: "" });
+      return next;
+    });
+  }
+
+  function updatePlanName(value) {
+    setEditedPlan(prev => ({ ...prev, plan_name: value }));
+  }
+
+  function updateDayFocus(dayIdx, value) {
+    setEditedPlan(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next.days[dayIdx].focus = value;
+      return next;
+    });
+  }
+
+  const activePlan = editMode ? editedPlan : plan;
+
   async function handleSaveRoutine() {
-    if (!plan) return;
+    if (!activePlan) return;
     setSaving(true);
     setError("");
     try {
@@ -736,17 +824,13 @@ function RecordScreen() {
           Authorization: `Bearer ${token()}`
         },
         body: JSON.stringify({
-          // Mudado de 'name' para 'plan_name' para bater com o Backend e a Tabela
-          plan_name: plan.plan_name || "Minha Rotina IA", 
-          goal: plan.goal,
-          frequency: plan.frequency,
-          
-          // Enviando os novos campos estruturados para as colunas correspondentes
-          weekly_kcal_estimate: Number(plan.weekly_kcal_estimate) || 0,
-          days: plan.days || [], // Envia o array completo de dias e exercícios
-          ai_tip: plan.ai_tip || "",
-          
-          plan_data: plan, // Mantém os metadados brutos se quiseres guardar na coluna plan_data
+          plan_name: activePlan.plan_name || "Minha Rotina IA",
+          goal: activePlan.goal,
+          frequency: activePlan.frequency,
+          weekly_kcal_estimate: Number(activePlan.weekly_kcal_estimate) || 0,
+          days: activePlan.days || [],
+          ai_tip: activePlan.ai_tip || "",
+          plan_data: activePlan,
         }),
       });
 
@@ -755,6 +839,9 @@ function RecordScreen() {
         setError(data.error || "Erro ao salvar rotina.");
         return;
       }
+      // Persiste edições no plano original também
+      if (editMode) setPlan(JSON.parse(JSON.stringify(editedPlan)));
+      setEditMode(false);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (e) {
@@ -874,87 +961,281 @@ function RecordScreen() {
           </div>
 
           {/* Plano gerado */}
-          {plan && (
+          {activePlan && (
             <>
-              {/* Resumo do plano */}
+              {/* Resumo do plano + toggle edição */}
               <div style={{ ...styles.card, borderColor: COLORS.accent + "55", background: COLORS.accent + "08" }}>
                 <div style={{ ...styles.row, marginBottom: 10 }}>
-                  <div>
-                    <div style={{ fontSize: 17, fontWeight: 900, color: COLORS.accent }}>{plan.plan_name}</div>
-                    <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>{plan.goal} · {plan.frequency}</div>
+                  <div style={{ flex: 1, marginRight: 8 }}>
+                    {editMode ? (
+                      <input
+                        style={{ ...styles.input, fontSize: 16, fontWeight: 900, color: COLORS.accent, marginBottom: 4, padding: "6px 10px" }}
+                        value={editedPlan.plan_name}
+                        onChange={e => updatePlanName(e.target.value)}
+                      />
+                    ) : (
+                      <div style={{ fontSize: 17, fontWeight: 900, color: COLORS.accent }}>{activePlan.plan_name}</div>
+                    )}
+                    <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>{activePlan.goal} · {activePlan.frequency}</div>
                   </div>
-                  <span style={{ ...styles.badge(COLORS.accent), fontSize: 10 }}>IA</span>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <span style={{ ...styles.badge(COLORS.accent), fontSize: 10 }}>IA</span>
+                    <button
+                      onClick={() => { setEditMode(e => !e); setReplacingEx(null); setEditingCell(null); }}
+                      style={{ background: editMode ? COLORS.warning + "22" : COLORS.surface3, border: `1.5px solid ${editMode ? COLORS.warning : COLORS.border}`, color: editMode ? COLORS.warning : COLORS.textSecondary, borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1 }}
+                    >
+                      {editMode ? "✕ CANCELAR" : "✏ EDITAR"}
+                    </button>
+                  </div>
                 </div>
+
+                {editMode && (
+                  <div style={{ background: COLORS.warning + "11", border: `1px solid ${COLORS.warning}33`, borderRadius: 8, padding: "10px 12px", marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, color: COLORS.warning, fontWeight: 700, letterSpacing: 1 }}>✏ MODO EDIÇÃO ATIVO</div>
+                    <div style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 3, lineHeight: 1.5 }}>Edite séries, reps, substitua ou remova exercícios. Salve para confirmar.</div>
+                  </div>
+                )}
+
                 <div style={{ display: "flex", gap: 12 }}>
-                  <div style={{ background: COLORS.surface2, borderRadius: 8, padding: "8px 14px", flex: 1, textAlign: "center" }}>
-                    <div style={{ fontSize: 18, fontWeight: 900, color: COLORS.accent }}>{plan.days?.length || 0}</div>
-                    <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1 }}>TREINOS</div>
-                  </div>
-                  <div style={{ background: COLORS.surface2, borderRadius: 8, padding: "8px 14px", flex: 1, textAlign: "center" }}>
-                    <div style={{ fontSize: 18, fontWeight: 900, color: COLORS.accent }}>{plan.weekly_kcal_estimate?.toLocaleString() || "—"}</div>
-                    <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1 }}>KCAL/SEM</div>
-                  </div>
-                  <div style={{ background: COLORS.surface2, borderRadius: 8, padding: "8px 14px", flex: 1, textAlign: "center" }}>
-                    <div style={{ fontSize: 18, fontWeight: 900, color: COLORS.accent }}>{plan.days?.reduce((s, d) => s + (d.duration_min || 0), 0) || "—"}</div>
-                    <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1 }}>MIN/SEM</div>
-                  </div>
+                  {[
+                    [activePlan.days?.length || 0, "TREINOS"],
+                    [activePlan.weekly_kcal_estimate?.toLocaleString() || "—", "KCAL/SEM"],
+                    [activePlan.days?.reduce((s, d) => s + (d.duration_min || 0), 0) || "—", "MIN/SEM"],
+                  ].map(([v, l]) => (
+                    <div key={l} style={{ background: COLORS.surface2, borderRadius: 8, padding: "8px 14px", flex: 1, textAlign: "center" }}>
+                      <div style={{ fontSize: 18, fontWeight: 900, color: COLORS.accent }}>{v}</div>
+                      <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1 }}>{l}</div>
+                    </div>
+                  ))}
                 </div>
-                {plan.ai_tip && (
+                {activePlan.ai_tip && (
                   <div style={{ background: COLORS.surface3, borderRadius: 8, padding: 12, marginTop: 10 }}>
                     <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>✦ DICA DA IA</div>
-                    <div style={{ fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.6 }}>{plan.ai_tip}</div>
+                    <div style={{ fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.6 }}>{activePlan.ai_tip}</div>
                   </div>
                 )}
               </div>
 
               {/* Dias do plano */}
-              {plan.days?.map((day, idx) => (
+              {activePlan.days?.map((day, idx) => (
                 <div key={idx} style={{ ...styles.card, padding: 0, overflow: "hidden" }}>
+                  {/* Cabeçalho do dia */}
                   <div
-                    onClick={() => setExpandedDay(expandedDay === idx ? null : idx)}
-                    style={{ ...styles.row, padding: "14px 16px", cursor: "pointer" }}
+                    onClick={() => !editMode && setExpandedDay(expandedDay === idx ? null : idx)}
+                    style={{ ...styles.row, padding: "14px 16px", cursor: editMode ? "default" : "pointer" }}
                   >
-                    <div>
+                    <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 15, fontWeight: 800 }}>{day.day}</div>
-                      <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>{day.focus}</div>
+                      {editMode ? (
+                        <input
+                          style={{ ...styles.input, fontSize: 12, color: COLORS.textMuted, marginTop: 4, marginBottom: 0, padding: "4px 8px", width: "100%" }}
+                          value={day.focus}
+                          onChange={e => updateDayFocus(idx, e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                          placeholder="Foco do treino"
+                        />
+                      ) : (
+                        <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>{day.focus}</div>
+                      )}
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700 }}>⏱ {day.duration_min}min</div>
-                        <div style={{ fontSize: 11, color: COLORS.textMuted }}>🔥 {day.kcal_estimate} kcal</div>
+                    {!editMode && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700 }}>⏱ {day.duration_min}min</div>
+                          <div style={{ fontSize: 11, color: COLORS.textMuted }}>🔥 {day.kcal_estimate} kcal</div>
+                        </div>
+                        <span style={{ color: COLORS.accent, fontSize: 16, transition: "transform 0.2s", display: "inline-block", transform: expandedDay === idx ? "rotate(90deg)" : "rotate(0deg)" }}>›</span>
                       </div>
-                      <span style={{ color: COLORS.accent, fontSize: 16, transition: "transform 0.2s", display: "inline-block", transform: expandedDay === idx ? "rotate(90deg)" : "rotate(0deg)" }}>›</span>
-                    </div>
+                    )}
+                    {editMode && (
+                      <div style={{ fontSize: 11, color: COLORS.textMuted, marginLeft: 8, whiteSpace: "nowrap" }}>{day.exercises?.length || 0} exerc.</div>
+                    )}
                   </div>
 
-                  {expandedDay === idx && (
-                    <div style={{ borderTop: `1px solid ${COLORS.border}`, padding: "12px 16px" }}>
+                  {/* Lista de exercícios — sempre visível no modo edição */}
+                  {(editMode || expandedDay === idx) && (
+                    <div style={{ borderTop: `1px solid ${COLORS.border}`, padding: editMode ? "8px 12px" : "12px 16px" }}>
                       {day.exercises.map((ex, j) => (
                         <div key={j} style={{ padding: "10px 0", borderBottom: j < day.exercises.length - 1 ? `1px solid ${COLORS.border}` : "none" }}>
-                          <div style={{ ...styles.row }}>
-                            <div style={{ fontSize: 14, fontWeight: 700 }}>{ex.name}</div>
-                            <div style={{ display: "flex", gap: 6 }}>
-                              <span style={{ ...styles.badge(COLORS.accent), fontSize: 10 }}>{ex.sets}x{ex.reps}</span>
-                              <span style={{ ...styles.badge(COLORS.info), fontSize: 10 }}>⏸{ex.rest_seconds}s</span>
-                            </div>
-                          </div>
-                          {ex.description && (
-                            <p style={{ fontSize: "12px", color: COLORS.textSecondary, marginTop: "4px", marginBotton: 0, lineHeight: "1.4" }}>
-                              {ex.description}
-                            </p>
+
+                          {/* VIEW MODE */}
+                          {!editMode && (
+                            <>
+                              <div style={{ ...styles.row }}>
+                                <div style={{ fontSize: 14, fontWeight: 700 }}>{ex.name}</div>
+                                <div style={{ display: "flex", gap: 6 }}>
+                                  <span style={{ ...styles.badge(COLORS.accent), fontSize: 10 }}>{ex.sets}x{ex.reps}</span>
+                                  {ex.rest_seconds && <span style={{ ...styles.badge(COLORS.info), fontSize: 10 }}>⏸{ex.rest_seconds}s</span>}
+                                </div>
+                              </div>
+                              {ex.description && <p style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 4, lineHeight: 1.4 }}>{ex.description}</p>}
+                              {ex.tip && <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>💡 {ex.tip}</div>}
+                            </>
                           )}
-                          {ex.tip && (
-                            <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4, lineHeight: 1.5 }}>💡 {ex.tip}</div>
+
+                          {/* EDIT MODE */}
+                          {editMode && (
+                            <div style={{ background: COLORS.surface2, borderRadius: 8, padding: "10px 12px" }}>
+                              {/* Nome / Substituição */}
+                              {replacingEx && replacingEx.dayIdx === idx && replacingEx.exIdx === j ? (
+                                <div>
+                                  {/* Cabeçalho com abas */}
+                                  <div style={{ ...styles.row, marginBottom: 10 }}>
+                                    <div style={{ fontSize: 11, color: COLORS.warning, fontWeight: 700, letterSpacing: 1 }}>SUBSTITUIR POR:</div>
+                                    <div style={{ display: "flex", gap: 4 }}>
+                                      {["banco", "custom"].map(tab => (
+                                        <button
+                                          key={tab}
+                                          onClick={() => setReplaceTab(tab)}
+                                          style={{ background: replaceTab === tab ? COLORS.accent : COLORS.surface3, border: `1px solid ${replaceTab === tab ? COLORS.accent : COLORS.border}`, color: replaceTab === tab ? "#fff" : COLORS.textMuted, borderRadius: 5, padding: "3px 9px", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1 }}
+                                        >
+                                          {tab === "banco" ? "DO BANCO" : "✦ CRIAR NOVO"}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+
+                                  {/* Aba: Do banco */}
+                                  {replaceTab === "banco" && (
+                                    <div style={{ maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+                                      {availableExercises.filter(e => e.name !== ex.name).map(e => (
+                                        <button
+                                          key={e.name}
+                                          onClick={() => replaceExercise(idx, j, e.name)}
+                                          style={{ background: COLORS.surface3, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "7px 10px", fontSize: 12, color: COLORS.text, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}
+                                        >
+                                          <span style={{ fontWeight: 700 }}>{e.name}</span>
+                                          <span style={{ color: COLORS.textMuted, fontSize: 11 }}> · {e.category} · {e.difficulty}</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Aba: Criar novo */}
+                                  {replaceTab === "custom" && (
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                      <div>
+                                        <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 3 }}>NOME DO EXERCÍCIO *</div>
+                                        <input
+                                          style={{ ...styles.input, marginBottom: 0, fontSize: 13, fontWeight: 700 }}
+                                          value={customExForm.name}
+                                          placeholder="Ex: Remada com elástico"
+                                          onChange={e => setCustomExForm(f => ({ ...f, name: e.target.value }))}
+                                        />
+                                      </div>
+                                      <div style={{ display: "flex", gap: 8 }}>
+                                        <div style={{ flex: 1 }}>
+                                          <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 3 }}>SÉRIES</div>
+                                          <input
+                                            style={{ ...styles.input, marginBottom: 0, textAlign: "center", fontSize: 14, fontWeight: 700 }}
+                                            value={customExForm.sets}
+                                            inputMode="numeric"
+                                            onChange={e => setCustomExForm(f => ({ ...f, sets: e.target.value.replace(/\D/g, "") }))}
+                                          />
+                                        </div>
+                                        <div style={{ flex: 2 }}>
+                                          <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 3 }}>REPETIÇÕES</div>
+                                          <input
+                                            style={{ ...styles.input, marginBottom: 0, textAlign: "center", fontSize: 14, fontWeight: 700 }}
+                                            value={customExForm.reps}
+                                            placeholder="Ex: 12 ou 8-12"
+                                            onChange={e => setCustomExForm(f => ({ ...f, reps: e.target.value }))}
+                                          />
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 3 }}>DESCRIÇÃO</div>
+                                        <textarea
+                                          style={{ ...styles.input, marginBottom: 0, resize: "none", minHeight: 60, fontSize: 12, lineHeight: 1.5 }}
+                                          value={customExForm.description}
+                                          placeholder="Como executar o exercício..."
+                                          onChange={e => setCustomExForm(f => ({ ...f, description: e.target.value }))}
+                                        />
+                                      </div>
+                                      <button
+                                        onClick={() => replaceWithCustom(idx, j)}
+                                        disabled={!customExForm.name.trim()}
+                                        style={{ ...styles.btn, padding: "10px", fontSize: 12, opacity: customExForm.name.trim() ? 1 : 0.4 }}
+                                      >
+                                        ✓ USAR ESTE EXERCÍCIO
+                                      </button>
+                                    </div>
+                                  )}
+
+                                  <button
+                                    onClick={() => { setReplacingEx(null); setReplaceTab("banco"); }}
+                                    style={{ marginTop: 10, background: "none", border: "none", color: COLORS.textMuted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+                                  >✕ Cancelar</button>
+                                </div>
+                              ) : (
+                                <>
+                                  <div style={{ ...styles.row, marginBottom: 8 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 800, flex: 1, color: COLORS.accent }}>{ex.name}</div>
+                                    <div style={{ display: "flex", gap: 6 }}>
+                                      <button
+                                        onClick={() => setReplacingEx({ dayIdx: idx, exIdx: j })}
+                                        style={{ background: COLORS.info + "22", border: `1px solid ${COLORS.info}44`, color: COLORS.info, borderRadius: 5, padding: "3px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1 }}
+                                      >⇄ TROCAR</button>
+                                      <button
+                                        onClick={() => removeExercise(idx, j)}
+                                        style={{ background: COLORS.danger + "22", border: `1px solid ${COLORS.danger}44`, color: COLORS.danger, borderRadius: 5, padding: "3px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                                      >✕</button>
+                                    </div>
+                                  </div>
+
+                                  {/* Séries e Reps inline */}
+                                  <div style={{ display: "flex", gap: 8 }}>
+                                    <div style={{ flex: 1 }}>
+                                      <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 3 }}>SÉRIES</div>
+                                      <input
+                                        style={{ ...styles.input, padding: "7px 10px", fontSize: 14, fontWeight: 700, textAlign: "center", marginBottom: 0 }}
+                                        value={ex.sets}
+                                        type="text"
+                                        inputMode="numeric"
+                                        onChange={e => updateExerciseField(idx, j, "sets", e.target.value.replace(/\D/g, ""))}
+                                      />
+                                    </div>
+                                    <div style={{ flex: 2 }}>
+                                      <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 3 }}>REPETIÇÕES</div>
+                                      <input
+                                        style={{ ...styles.input, padding: "7px 10px", fontSize: 14, fontWeight: 700, textAlign: "center", marginBottom: 0 }}
+                                        value={ex.reps}
+                                        onChange={e => updateExerciseField(idx, j, "reps", e.target.value)}
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Descrição */}
+                                  <div style={{ marginTop: 8 }}>
+                                    <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 3 }}>DESCRIÇÃO</div>
+                                    <textarea
+                                      style={{ ...styles.input, marginBottom: 0, resize: "none", minHeight: 70, fontSize: 12, lineHeight: 1.5 }}
+                                      value={ex.description || ""}
+                                      placeholder="Descreva como executar o exercício..."
+                                      onChange={e => updateExerciseField(idx, j, "description", e.target.value)}
+                                    />
+                                  </div>
+                                </>
+                              )}
+                            </div>
                           )}
                         </div>
                       ))}
+
+                      {/* Botão adicionar exercício (só no modo edição) */}
+                      {editMode && (
+                        <button
+                          onClick={() => addExercise(idx)}
+                          style={{ ...styles.btnOutline, marginTop: 10, padding: "8px", fontSize: 11, letterSpacing: 1 }}
+                        >+ ADICIONAR EXERCÍCIO</button>
+                      )}
                     </div>
                   )}
                 </div>
               ))}
 
-              {/* Botão salvar */}
-              <div style={{ padding: "4px 16px 16px" }}>
+              {/* Botões de ação */}
+              <div style={{ padding: "4px 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
                 {saveSuccess ? (
                   <div style={{ ...styles.btn, background: "#4caf50", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, cursor: "default" }}>
                     ✓ ROTINA SALVA COM SUCESSO!
@@ -965,7 +1246,7 @@ function RecordScreen() {
                     onClick={handleSaveRoutine}
                     disabled={saving}
                   >
-                    {saving ? "SALVANDO..." : "💾 SALVAR ESTA ROTINA"}
+                    {saving ? "SALVANDO..." : editMode ? "💾 SALVAR EDIÇÕES E ROTINA" : "💾 SALVAR ESTA ROTINA"}
                   </button>
                 )}
               </div>
