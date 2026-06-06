@@ -32,11 +32,11 @@ router.post("/generate-plan", async (req, res, next) => {
     // 2. Busca exercícios do banco filtrados pelo objetivo
     const { data: exercises, error: exError } = await supabase
       .from("exercises")
-      .select("name, category, equipment, difficulty, muscle_group, met")
+      .select("name, category, equipment, difficulty, muscle_group, met, description") // <-- Adicione description aqui
       .eq("goal", goal)
       .order("category")
       .order("name");
-
+      
     if (exError)
       return res.status(500).json({ error: "Erro ao buscar exercícios." });
 
@@ -44,11 +44,12 @@ router.post("/generate-plan", async (req, res, next) => {
       return res.status(404).json({ error: "Nenhum exercício encontrado para este objetivo." });
 
     // 3. Organiza exercícios por categoria para o prompt
-    const byCategory = {};
-    exercises.forEach(ex => {
-      if (!byCategory[ex.category]) byCategory[ex.category] = [];
-      byCategory[ex.category].push(`${ex.name} (${ex.difficulty}, ${ex.equipment})`);
-    });
+      const byCategory = {};
+      exercises.forEach(ex => {
+        if (!byCategory[ex.category]) byCategory[ex.category] = [];
+        // Incluindo a descrição no texto que vai para o prompt da IA
+        byCategory[ex.category].push(`${ex.name} (${ex.difficulty}, ${ex.equipment}) - Descrição: ${ex.description || 'Sem descrição'}`);
+      });
 
     const exerciseList = Object.entries(byCategory)
       .map(([cat, exs]) => `${cat}: ${exs.join(", ")}`)
@@ -89,14 +90,13 @@ Responda APENAS com um JSON válido, sem texto extra, sem markdown, sem explica�
         {
           "name": "nome do exercício",
           "sets": número de séries,
-          "reps": "repetições (ex: 10-12)",
-          "rest_seconds": descanso em segundos,
-          "tip": "dica de execução curta"
+          "reps": "repetições",
+          "description": "uma breve descrição de como executar o exercício baseada nos dados enviados"
         }
       ]
     }
   ],
-  "ai_tip": "dica geral personalizada para o usuário baseada no perfil dele"
+  "ai_tip": "fornecer a descrição de como faer o exercício"
 }`;
 
     // 5. Chama a API da Groq (Substituindo o Ollama)

@@ -938,6 +938,11 @@ function RecordScreen() {
                               <span style={{ ...styles.badge(COLORS.info), fontSize: 10 }}>⏸{ex.rest_seconds}s</span>
                             </div>
                           </div>
+                          {ex.description && (
+                            <p style={{ fontSize: "12px", color: COLORS.textSecondary, marginTop: "4px", marginBotton: 0, lineHeight: "1.4" }}>
+                              {ex.description}
+                            </p>
+                          )}
                           {ex.tip && (
                             <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4, lineHeight: 1.5 }}>💡 {ex.tip}</div>
                           )}
@@ -1059,6 +1064,12 @@ function RecordScreen() {
                                       <div style={{ fontSize: 13, fontWeight: 700 }}>{ex.name}</div>
                                       <span style={{ ...styles.badge(COLORS.accent), fontSize: 10 }}>{ex.sets}x{ex.reps}</span>
                                     </div>
+
+                                    {ex.description && (
+                                      <p style={{ fontSize: "12px", color: COLORS.textSecondary, marginTop: "4px", marginBotton: 0, lineHeight: "1.4" }}>
+                                        {ex.description}
+                                      </p>
+                                    )}
                                     {ex.tip && <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 3 }}>💡 {ex.tip}</div>}
                                   </div>
                                 ))}
