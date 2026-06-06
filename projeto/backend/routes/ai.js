@@ -12,7 +12,7 @@ router.use(requireAuth);
 // ─── POST /ai/generate-plan ───────────────────────────────────────────────────
 router.post("/generate-plan", async (req, res, next) => {
   try {
-    const { goal, frequency } = req.body;
+    const { goal, frequency, notes } = req.body;
 
     if (!goal || !frequency)
       return res.status(400).json({ error: "Objetivo e frequência são obrigatórios." });
@@ -60,11 +60,22 @@ router.post("/generate-plan", async (req, res, next) => {
       ? `Usuário: ${profile.name || "Atleta"}, ${profile.idade || "idade não informada"} anos, ${profile.peso || "peso não informado"}kg, ${profile.altura || "altura não informada"}cm.`
       : "Perfil não informado.";
 
+    // 4a. Monta lista plana de exercícios disponíveis para retornar ao frontend
+    const availableExercises = exercises.map(ex => ({
+      name: ex.name,
+      category: ex.category,
+      equipment: ex.equipment,
+      difficulty: ex.difficulty,
+      muscle_group: ex.muscle_group,
+      description: ex.description || "",
+    }));
+
     const prompt = `Você é um personal trainer especialista. Crie um plano de treino semanal personalizado.
 
 ${userInfo}
 Objetivo: ${goal}
 Frequência: O usuário vai realizar exatamente ${daysPerWeek} treinos diferentes.
+${notes ? `Observações e restrições do usuário: ${notes}` : ""}
 
 Exercícios disponíveis no banco de dados:
 ${exerciseList}
@@ -139,6 +150,7 @@ Responda APENAS com um JSON válido, sem texto extra, sem markdown, sem explica�
       message: "Plano gerado com sucesso.",
       plan,
       plan_id: savedPlan?.id || null,
+      available_exercises: availableExercises,
     });
   } catch (err) {
     next(err);
