@@ -11,7 +11,8 @@ const nutritionRoutes = require("./routes/nutrition");
 const routineRoutes   = require("./routes/routine");
 const exerciseRoutes  = require("./routes/exercises");
 const aiRoutes        = require("./routes/ai");
-const profileRoutes = require("./routes/ai");
+const profileRoutes     = require("./routes/ai");
+const workoutLogsRoutes = require("./routes/workout_logs");
 
 
 const app  = express();
@@ -46,6 +47,7 @@ app.use("/routine",   routineRoutes);
 app.use("/exercises", exerciseRoutes);
 app.use("/ai",        aiRoutes);
 app.use("/profile", profileRoutes)
+app.use("/workout-logs", workoutLogsRoutes);
 app.get("/health", (req, res) =>
   res.json({ status: "ok", timestamp: new Date().toISOString() })
 );

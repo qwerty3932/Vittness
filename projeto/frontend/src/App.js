@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const COLORS = {
   bg: "#0d0d0d",
@@ -695,6 +695,11 @@ function RecordScreen() {
   const [expandedRoutine, setExpandedRoutine] = useState(null);
   const [expandedRoutineDay, setExpandedRoutineDay] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  // Modal de conclusão de treino
+  const [completeModal, setCompleteModal] = useState(null); // { routineId, dayName, kcalEstimate, durationMin }
+  const [logKcal, setLogKcal] = useState("");
+  const [loggingWorkout, setLoggingWorkout] = useState(false);
+  const [logSuccess, setLogSuccess] = useState(null); // dayKey que acabou de ser concluído
   const [editMode, setEditMode] = useState(false);
   const [editedPlan, setEditedPlan] = useState(null);
   const [availableExercises, setAvailableExercises] = useState([]);
@@ -879,6 +884,33 @@ function RecordScreen() {
       }
     } catch (e) { /* ignore */ }
     finally { setDeletingId(null); }
+  }
+
+  async function handleLogWorkout() {
+    if (!completeModal) return;
+    setLoggingWorkout(true);
+    try {
+      const res = await fetch(`${API}/workout-logs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({
+          routine_id:   completeModal.routineId,
+          day_name:     completeModal.dayName,
+          kcal_burned:  logKcal ? Number(logKcal) : completeModal.kcalEstimate,
+          duration_min: completeModal.durationMin,
+        }),
+      });
+      if (res.ok) {
+        const dayKey = `${completeModal.routineId}-${completeModal.dayName}`;
+        setLogSuccess(dayKey);
+        setTimeout(() => setLogSuccess(null), 3000);
+      }
+    } catch (_) {}
+    finally {
+      setLoggingWorkout(false);
+      setCompleteModal(null);
+      setLogKcal("");
+    }
   }
 
   // Carrega rotinas ao entrar na aba
@@ -1354,6 +1386,20 @@ function RecordScreen() {
                                     {ex.tip && <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 3 }}>💡 {ex.tip}</div>}
                                   </div>
                                 ))}
+
+                                {/* Botão concluir treino */}
+                                {logSuccess === `${routine.id}-${day.day}` ? (
+                                  <div style={{ marginTop: 12, background: "#4caf5022", border: "1px solid #4caf5055", borderRadius: 8, padding: "10px 14px", fontSize: 13, fontWeight: 700, color: "#4caf50", textAlign: "center" }}>
+                                    ✓ Treino registrado!
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setCompleteModal({ routineId: routine.id, dayName: day.day, kcalEstimate: day.kcal_estimate, durationMin: day.duration_min }); setLogKcal(String(day.kcal_estimate || "")); }}
+                                    style={{ marginTop: 12, width: "100%", background: COLORS.accent + "18", border: `1.5px solid ${COLORS.accent}55`, color: COLORS.accent, borderRadius: 8, padding: "10px", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1 }}
+                                  >
+                                    ✓ CONCLUIR TREINO
+                                  </button>
+                                )}
                               </div>
                             )}
                           </div>
@@ -1388,12 +1434,84 @@ function RecordScreen() {
       )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+      {/* Modal: Confirmar conclusao de treino */}
+      {completeModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 999, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+          onClick={() => { setCompleteModal(null); setLogKcal(""); }}>
+          <div style={{ background: COLORS.surface, borderRadius: "16px 16px 0 0", padding: "24px 20px 36px", width: "100%", maxWidth: 480 }}
+            onClick={e => e.stopPropagation()}>
+
+            <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700, letterSpacing: 2, marginBottom: 4 }}>CONCLUIR TREINO</div>
+            <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 4 }}>{completeModal.dayName}</div>
+            <div style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 20 }}>
+              Estimativa: {completeModal.kcalEstimate} kcal · {completeModal.durationMin} min
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 6 }}>CALORIAS GASTAS (kcal)</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  style={{ ...styles.input, flex: 1, marginBottom: 0, fontSize: 22, fontWeight: 900, textAlign: "center" }}
+                  value={logKcal}
+                  type="text"
+                  inputMode="numeric"
+                  placeholder={String(completeModal.kcalEstimate || "0")}
+                  onChange={e => setLogKcal(e.target.value.replace(/\D/g, ""))}
+                />
+                <button
+                  onClick={() => setLogKcal(String(completeModal.kcalEstimate || ""))}
+                  style={{ background: COLORS.surface3, border: `1px solid ${COLORS.border}`, color: COLORS.textMuted, borderRadius: 8, padding: "10px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
+                >
+                  Usar estimativa
+                </button>
+              </div>
+              <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 6 }}>Deixe vazio para usar a estimativa da IA.</div>
+            </div>
+
+            <button
+              onClick={handleLogWorkout}
+              disabled={loggingWorkout}
+              style={{ ...styles.btn, opacity: loggingWorkout ? 0.7 : 1 }}
+            >
+              {loggingWorkout ? "REGISTRANDO..." : "CONFIRMAR TREINO CONCLUIDO"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function ProgressScreen() {
-  const days = ["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"];
+  const DAY_LABELS = ["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"];
+  const API   = process.env.REACT_APP_API_URL;
+  const token = () => localStorage.getItem("accessToken");
+
+  const [stats, setStats]       = useState(null);
+  const [loadingStats, setLoadingStats] = useState(true);
+  const [recentLogs, setRecentLogs]     = useState([]);
+
+  async function fetchStats() {
+    setLoadingStats(true);
+    try {
+      const [sRes, lRes] = await Promise.all([
+        fetch(`${API}/workout-logs/stats`, { headers: { Authorization: `Bearer ${token()}` } }),
+        fetch(`${API}/workout-logs`,       { headers: { Authorization: `Bearer ${token()}` } }),
+      ]);
+      const sData = await sRes.json();
+      const lData = await lRes.json();
+      if (sRes.ok) setStats(sData);
+      if (lRes.ok) setRecentLogs((lData.logs || []).slice(0, 5));
+    } catch (_) {}
+    setLoadingStats(false);
+  }
+
+  useEffect(() => { fetchStats(); }, []);
+
+  const weeklyKcal  = stats?.weekly_kcal || Array(7).fill(0);
+  const maxKcal     = Math.max(...weeklyKcal, 1);
+  const todayDowIdx = (new Date().getDay() + 6) % 7; // 0=seg
 
   return (
     <div style={styles.screen}>
@@ -1403,60 +1521,96 @@ function ProgressScreen() {
         <div style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 6 }}>Acompanhe sua evolução conforme você treina.</div>
       </div>
 
+      {/* Cards de totais */}
       <div style={{ display: "flex", gap: 12, padding: "12px 16px 0" }}>
-        {[["0", "TREINOS TOTAIS", "comece hoje!"], ["0", "MINUTOS ATIVOS", "min"]].map(([v, l, s]) => (
-          <div key={l} style={{ ...styles.card, flex: 1, margin: 0 }}>
+        {[
+          [loadingStats ? "—" : stats?.total_workouts ?? 0,  "TREINOS TOTAIS", "realizados"],
+          [loadingStats ? "—" : stats?.total_minutes   ?? 0, "MINUTOS ATIVOS", "no total"],
+          [loadingStats ? "—" : (stats?.total_kcal ?? 0).toLocaleString(), "KCAL GASTAS", "no total"],
+        ].map(([v, l, s]) => (
+          <div key={l} style={{ ...styles.card, flex: 1, margin: 0, textAlign: "center" }}>
             <div style={styles.label}>{l}</div>
-            <div style={{ fontSize: 26, fontWeight: 900, color: COLORS.textMuted }}>{v}</div>
-            <div style={{ fontSize: 11, color: COLORS.textMuted }}>{s}</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: COLORS.accent }}>{v}</div>
+            <div style={{ fontSize: 10, color: COLORS.textMuted }}>{s}</div>
           </div>
         ))}
       </div>
 
+      {/* Score de consistência */}
       <div style={styles.card}>
-        <div style={styles.label}>Score de Consistência</div>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{ fontSize: 32, fontWeight: 900, color: COLORS.textMuted }}>—</span>
-          <span style={{ fontSize: 13, color: COLORS.textMuted }}>sem treinos ainda</span>
+        <div style={styles.label}>Score de Consistência <span style={{ color: COLORS.textMuted, fontWeight: 400 }}>(últimos 30 dias)</span></div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+          {loadingStats ? (
+            <span style={{ fontSize: 32, fontWeight: 900, color: COLORS.textMuted }}>—</span>
+          ) : (
+            <>
+              <span style={{ fontSize: 32, fontWeight: 900, color: stats?.consistency_score > 0 ? COLORS.accent : COLORS.textMuted }}>
+                {stats?.consistency_score ?? 0}%
+              </span>
+              <span style={{ fontSize: 13, color: COLORS.textMuted }}>
+                {stats?.consistency_score >= 80 ? "🔥 Excelente!" : stats?.consistency_score >= 40 ? "💪 Bom ritmo" : "comece hoje!"}
+              </span>
+            </>
+          )}
         </div>
-        <ProgressBar value={0} max={100} />
+        <ProgressBar value={stats?.consistency_score ?? 0} max={100} />
       </div>
 
+      {/* Gráfico semanal */}
       <div style={styles.card}>
         <div style={{ ...styles.row, marginBottom: 16 }}>
           <div style={styles.label}>Atividade Semanal</div>
-          <span style={{ fontSize: 11, color: COLORS.textMuted }}>Calorias (kcal)</span>
+          <span style={{ fontSize: 11, color: COLORS.textMuted }}>kcal por dia</span>
         </div>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 80 }}>
-          {days.map((d) => (
-            <div key={d} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-              <div style={{ width: "100%", background: COLORS.surface3, borderRadius: "3px 3px 0 0", height: 8 }} />
-              <span style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 0.5 }}>{d}</span>
-            </div>
-          ))}
+          {DAY_LABELS.map((d, i) => {
+            const h = weeklyKcal[i] > 0 ? Math.max(8, Math.round((weeklyKcal[i] / maxKcal) * 72)) : 8;
+            const isToday = i === todayDowIdx;
+            const hasData = weeklyKcal[i] > 0;
+            return (
+              <div key={d} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                {hasData && <div style={{ fontSize: 8, color: COLORS.accent, fontWeight: 700 }}>{weeklyKcal[i]}</div>}
+                <div style={{ flex: 1, display: "flex", alignItems: "flex-end", width: "100%" }}>
+                  <div style={{ width: "100%", background: hasData ? COLORS.accent : COLORS.surface3, borderRadius: "3px 3px 0 0", height: h, opacity: isToday ? 1 : 0.6, transition: "height 0.4s" }} />
+                </div>
+                <span style={{ fontSize: 9, color: isToday ? COLORS.accent : COLORS.textMuted, fontWeight: isToday ? 800 : 400, letterSpacing: 0.5 }}>{d}</span>
+              </div>
+            );
+          })}
         </div>
-        <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 10, textAlign: "center" }}>
-          Grave treinos para ver seu gráfico aqui.
-        </div>
+        {!loadingStats && weeklyKcal.every(v => v === 0) && (
+          <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 10, textAlign: "center" }}>
+            Conclua treinos para ver seu gráfico aqui.
+          </div>
+        )}
       </div>
 
+      {/* Histórico recente */}
       <div style={styles.card}>
         <div style={{ ...styles.row, marginBottom: 12 }}>
-          <div style={styles.label}>Rotina Ativa</div>
-          <span style={{ ...styles.tag, fontSize: 10, background: COLORS.textMuted + "22", color: COLORS.textMuted }}>SEM ROTINA</span>
+          <div style={styles.label}>Últimos Treinos</div>
+          {recentLogs.length > 0 && <span style={{ ...styles.badge(COLORS.accent), fontSize: 10 }}>{recentLogs.length}</span>}
         </div>
-        <EmptyState
-          icon="🗓"
-          title="Nenhuma rotina criada"
-          subtitle="Crie sua rotina de treinos para que ela apareça aqui com o próximo exercício do dia."
-        />
-      </div>
-
-      <div style={{ ...styles.card, borderColor: COLORS.accent + "44", background: COLORS.accent + "0d" }}>
-        <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>✦ COACH IA</div>
-        <div style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.6 }}>
-          Realize seu primeiro treino para receber feedback personalizado da IA sobre sua performance e consistência.
-        </div>
+        {loadingStats ? (
+          <div style={{ fontSize: 12, color: COLORS.textMuted }}>Carregando...</div>
+        ) : recentLogs.length === 0 ? (
+          <EmptyState icon="🏋️" title="Nenhum treino registrado" subtitle="Conclua um treino nas suas rotinas salvas para ele aparecer aqui." />
+        ) : (
+          recentLogs.map((log, i) => (
+            <div key={log.id} style={{ ...styles.row, padding: "10px 0", borderBottom: i < recentLogs.length - 1 ? `1px solid ${COLORS.border}` : "none" }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{log.day_name}</div>
+                <div style={{ fontSize: 11, color: COLORS.textMuted }}>
+                  {new Date(log.completed_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {log.kcal_burned  && <span style={{ ...styles.badge(COLORS.danger),  fontSize: 10 }}>🔥 {log.kcal_burned} kcal</span>}
+                {log.duration_min && <span style={{ ...styles.badge(COLORS.accent), fontSize: 10 }}>⏱ {log.duration_min}min</span>}
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
