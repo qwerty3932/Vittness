@@ -1,25 +1,18 @@
 {
   "version": 2,
   "builds": [
-    {
-      "src": "backend/server.js",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": { "distDir": "build" }
-    }
+    { "src": "backend/server.js", "use": "@vercel/node" },
+    { "src": "frontend/package.json", "use": "@vercel/static-build", "config": { "distDir": "build" } }
   ],
   "routes": [
-    { "src": "/auth/(.*)",      "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
-    { "src": "/profiles/(.*)",  "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
-    { "src": "/user/(.*)",      "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
-    { "src": "/nutrition/(.*)", "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
-    { "src": "/routine/(.*)",   "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
-    { "src": "/exercises/(.*)", "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
-    { "src": "/ai/(.*)",        "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
-    { "src": "/health",         "methods": ["GET","OPTIONS"],                               "dest": "backend/server.js" },
-    { "src": "/(.*)",           "dest": "frontend/$1" }
+    { "src": "/auth(?:/(.*)|$)",      "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
+    { "src": "/profiles(?:/(.*)|$)",  "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
+    { "src": "/user(?:/(.*)|$)",      "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
+    { "src": "/nutrition(?:/(.*)|$)", "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
+    { "src": "/routine(?:/(.*)|$)",   "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
+    { "src": "/exercises(?:/(.*)|$)", "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
+    { "src": "/ai(?:/(.*)|$)",        "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"], "dest": "backend/server.js" },
+    { "src": "/health",               "methods": ["GET","OPTIONS"],                               "dest": "backend/server.js" },
+    { "src": "/(.*)",                 "dest": "frontend/$1" }
   ]
 }
