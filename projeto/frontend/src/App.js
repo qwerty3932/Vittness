@@ -1792,17 +1792,8 @@ function ProfileScreen({ onLogout, userName, currentUser, onUpdateUser }) {
         />
       </div>
 
-      <div style={styles.card}>
-        <div style={styles.label}>Recordes Pessoais</div>
-        <EmptyState
-          icon="📈"
-          title="Sem recordes ainda"
-          subtitle="Seus recordes pessoais aparecerão aqui após seus primeiros treinos."
-        />
-      </div>
-
       <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 2 }}>
-        {[["✏ Editar Perfil", "", () => setEditing(true)], ["⚙️ Configurações de conta", "", null], ["❓ Ajuda e Suporte", "", null], ["🚪 Sair", COLORS.danger, () => onNav("login")]].map(([lbl, color, action]) => (
+        {[["✏ Editar Perfil", "", () => setEditing(true)], ["🚪 Sair", COLORS.danger, () => onNav("login")]].map(([lbl, color, action]) => (
           <div key={lbl} onClick={action || undefined}
             style={{ ...styles.card, margin: "4px 0", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", padding: "14px 16px" }}>
             <span style={{ fontSize: 15, fontWeight: 600, color: color || COLORS.text }}>{lbl}</span>
