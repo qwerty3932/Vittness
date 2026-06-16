@@ -5,7 +5,7 @@ const { requireAuth } = require("../middleware/auth");
 const router = express.Router();
 router.use(requireAuth);
 
-router.get("/profile", async (req, res, next) => {
+router.get("/", async (req, res, next) => {
   try {
     const { data, error } = await supabase
       .from("profiles")
@@ -18,7 +18,7 @@ router.get("/profile", async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.patch("/profile", async (req, res, next) => {
+router.patch("/", async (req, res, next) => {
   try {
     const { name, idade, peso, altura, objetivo } = req.body;
     const updates = {};
