@@ -1749,23 +1749,6 @@ function ProfileScreen({ onLogout, userName, currentUser, onUpdateUser }) {
           </div>
           <div style={{ fontSize: 10, color: COLORS.textMuted }}>realizados</div>
         </div>
-        <div style={{ ...styles.card, flex: 1, margin: 0, textAlign: "center" }}>
-          <div style={styles.label}>CONQUISTAS</div>
-          <div style={{ fontSize: 22, fontWeight: 900, color: COLORS.textMuted }}>0</div>
-          <div style={{ fontSize: 10, color: COLORS.textMuted }}>desbloqueadas</div>
-        </div>
-      </div>
-
-      <div style={styles.card}>
-        <div style={{ ...styles.row, marginBottom: 12 }}>
-          <div style={styles.label}>Meus Troféus</div>
-        </div>
-        <EmptyState
-          icon="🏆"
-          title="Nenhum troféu ainda"
-          subtitle="Complete desafios e metas para conquistar troféus."
-        />
-      </div>
 
       <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 2 }}>
         {[["✏ Editar Perfil", "", () => setEditing(true)], ["🚪 Sair", COLORS.danger, () => onNav("login")]].map(([lbl, color, action]) => (
