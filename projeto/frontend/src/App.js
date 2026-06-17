@@ -1694,6 +1694,26 @@ function ProfileScreen({ onLogout, userName, currentUser, onUpdateUser }) {
   const initials = (currentUser?.name || userName || "?").split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
   const profileComplete = currentUser?.idade && currentUser?.peso && currentUser?.altura;
 
+  const API = process.env.REACT_APP_API_URL;
+  const token = () => localStorage.getItem("accessToken");
+  const [stats, setStats] = useState(null);
+  const [loadingStats, setLoadingStats] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    async function fetchStats() {
+      setLoadingStats(true);
+      try {
+        const res = await fetch(`${API}/workout-logs/stats`, { headers: { Authorization: `Bearer ${token()}` } });
+        const data = await res.json();
+        if (active && res.ok) setStats(data);
+      } catch (_) {}
+      if (active) setLoadingStats(false);
+    }
+    fetchStats();
+    return () => { active = false; };
+  }, []);
+
   if (editing) {
     return <EditProfileScreen user={currentUser || { name: userName }} onSave={(data) => { onUpdateUser(data); setEditing(false); }} onBack={() => setEditing(false)} />;
   }
@@ -1722,12 +1742,18 @@ function ProfileScreen({ onLogout, userName, currentUser, onUpdateUser }) {
       )}
 
       <div style={{ display: "flex", gap: 12, padding: "0 16px" }}>
-        {[["0", "ATIVIDADES"], ["0", "TREINOS"], ["0", "CONQUISTAS"]].map(([v, l]) => (
-          <div key={l} style={{ ...styles.card, flex: 1, margin: 0, textAlign: "center" }}>
-            <div style={{ fontSize: 24, fontWeight: 900, color: COLORS.textMuted }}>{v}</div>
-            <div style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 1 }}>{l}</div>
+        <div style={{ ...styles.card, flex: 1, margin: 0, textAlign: "center" }}>
+          <div style={styles.label}>TREINOS TOTAIS</div>
+          <div style={{ fontSize: 22, fontWeight: 900, color: COLORS.accent }}>
+            {loadingStats ? "—" : stats?.total_workouts ?? 0}
           </div>
-        ))}
+          <div style={{ fontSize: 10, color: COLORS.textMuted }}>realizados</div>
+        </div>
+        <div style={{ ...styles.card, flex: 1, margin: 0, textAlign: "center" }}>
+          <div style={styles.label}>CONQUISTAS</div>
+          <div style={{ fontSize: 22, fontWeight: 900, color: COLORS.textMuted }}>0</div>
+          <div style={{ fontSize: 10, color: COLORS.textMuted }}>desbloqueadas</div>
+        </div>
       </div>
 
       <div style={styles.card}>
