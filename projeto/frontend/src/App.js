@@ -1749,6 +1749,7 @@ function ProfileScreen({ onLogout, userName, currentUser, onUpdateUser }) {
           </div>
           <div style={{ fontSize: 10, color: COLORS.textMuted }}>realizados</div>
         </div>
+      </div>
 
       <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 2 }}>
         {[["✏ Editar Perfil", "", () => setEditing(true)], ["🚪 Sair", COLORS.danger, () => onNav("login")]].map(([lbl, color, action]) => (
