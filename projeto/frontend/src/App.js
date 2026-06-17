@@ -173,31 +173,6 @@ const styles = {
   navItemActive: {
     color: COLORS.accent,
   },
-  navCenterBtn: {
-    background: COLORS.accent,
-    borderRadius: "50%",
-    width: 52,
-    height: 52,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 24,
-    color: "#000",
-    border: "none",
-    cursor: "pointer",
-    marginTop: -20,
-    boxShadow: `0 4px 16px ${COLORS.accent}55`,
-    fontFamily: "inherit",
-  },
-  progressBar: (pct, color = COLORS.accent) => ({
-    height: 6,
-    background: COLORS.surface3,
-    borderRadius: 3,
-    overflow: "hidden",
-    marginTop: 8,
-    position: "relative",
-    "::after": {},
-  }),
   badge: (color = COLORS.accent) => ({
     background: color + "22",
     color: color,
@@ -362,7 +337,6 @@ function RegisterScreen({ onLogin, onNav }) {
 
     setLoading(true);
     try {
-      // 1. Registra as credenciais de autenticação no Supabase Auth
       const res = await fetch(`${process.env.REACT_APP_API_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -372,10 +346,9 @@ function RegisterScreen({ onLogin, onNav }) {
       
       if (!res.ok) {
         setErr(data.error || "Erro ao criar conta.");
-        return; // Interrompe o fluxo se houver erro no registro
+        return;
       }
 
-      // 2. Realiza o login automático para obter o token de acesso
       const loginRes = await fetch(`${process.env.REACT_APP_API_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -388,17 +361,14 @@ function RegisterScreen({ onLogin, onNav }) {
         return;
       }
 
-      // 3. Salva o token localmente
       localStorage.setItem("accessToken", loginData.accessToken);
 
-      // 4. Salva o perfil na tabela pública (Caso você NÃO use a Trigger do banco)
-      // Certifique-se de que sua API possui a rota POST '/profiles' ou correspondente
       try {
         await fetch(`${process.env.REACT_APP_API_URL}/profiles`, {
           method: "POST",
           headers: { 
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${loginData.accessToken}` // Passa o token do usuário logado
+            "Authorization": `Bearer ${loginData.accessToken}`
           },
           body: JSON.stringify({ 
             name: form.name,
@@ -407,11 +377,8 @@ function RegisterScreen({ onLogin, onNav }) {
         });
       } catch (profileError) {
         console.error("Erro ao criar registro de perfil:", profileError);
-        // Não bloqueamos o login do usuário se a autenticação já deu certo,
-        // mas o perfil pode ficar incompleto.
       }
 
-      // 5. Autentica o usuário na aplicação global
       onLogin(loginData.user);
 
     } catch (e) {
@@ -467,49 +434,80 @@ function EmptyState({ icon, title, subtitle, btnLabel, onBtn }) {
   );
 }
 
-function FeedScreen({ onNav }) {
+// ─── HOME SCREEN (substitui o Feed) ─────────────────────────────────────────
+
+function HomeScreen({ onNav, currentUser }) {
+  const profileComplete = currentUser?.peso && currentUser?.altura && currentUser?.idade;
+
   return (
     <div style={styles.screen}>
-      <div style={{ ...styles.card, background: COLORS.surface }}>
-        <div style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 10 }}>Esta semana</div>
-        <div style={{ display: "flex", gap: 24 }}>
-          {[["0", "KM TOTAL"], ["0min", "TEMPO"], ["0", "ATIVIDADES"]].map(([v, l]) => (
-            <div key={l}>
-              <div style={{ fontSize: 22, fontWeight: 800, color: COLORS.textMuted }}>{v}</div>
-              <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1, textTransform: "uppercase" }}>{l}</div>
-            </div>
-          ))}
+      {/* Boas-vindas */}
+      <div style={{ padding: "20px 20px 0" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.accent, letterSpacing: 2, marginBottom: 4 }}>⚡ BEM-VINDO DE VOLTA</div>
+        <div style={{ fontSize: 28, fontWeight: 900, lineHeight: 1.1 }}>
+          Olá, {currentUser?.name?.split(" ")[0] || "Atleta"}.
         </div>
+        <div style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 6 }}>Pronto para treinar hoje?</div>
       </div>
 
-      <div style={{ ...styles.card, borderColor: COLORS.accent + "55", background: COLORS.accent + "0d" }}>
-        <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>👋 BEM-VINDO AO VITTNESS</div>
-        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>Comece sua jornada agora</div>
+      {/* Alerta de perfil incompleto */}
+      {!profileComplete && (
+        <div style={{ ...styles.card, borderColor: COLORS.warning + "55", background: COLORS.warning + "0d" }}>
+          <div style={{ fontSize: 11, color: COLORS.warning, fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>⚠ PERFIL INCOMPLETO</div>
+          <div style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.6, marginBottom: 12 }}>
+            Adicione peso, altura e idade para que a IA crie planos personalizados para você.
+          </div>
+          <button style={{ ...styles.btn, padding: "10px", fontSize: 12, background: COLORS.warning, color: "#000" }} onClick={() => onNav("profile")}>
+            COMPLETAR PERFIL
+          </button>
+        </div>
+      )}
+
+      {/* Acesso rápido */}
+      <div style={styles.sectionTitle}>Acesso Rápido</div>
+      <div style={{ display: "flex", gap: 10, padding: "0 16px" }}>
+        {[
+          { icon: "🗓", label: "Minha Rotina", screen: "record" },
+          { icon: "🥗", label: "Nutrição", screen: "nutrition" },
+          { icon: "📊", label: "Progresso", screen: "progress" },
+        ].map(item => (
+          <button
+            key={item.screen}
+            onClick={() => onNav(item.screen)}
+            style={{
+              flex: 1,
+              background: COLORS.surface,
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: 12,
+              padding: "16px 8px",
+              cursor: "pointer",
+              color: COLORS.text,
+              fontFamily: "inherit",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 8,
+              transition: "border-color 0.15s",
+            }}
+          >
+            <span style={{ fontSize: 26 }}>{item.icon}</span>
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: COLORS.textSecondary }}>
+              {item.label}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* CTA gerar plano */}
+      <div style={{ ...styles.card, borderColor: COLORS.accent + "55", background: COLORS.accent + "0d", marginTop: 16 }}>
+        <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>✦ IA PERSONALIZADA</div>
+        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>Gere seu plano de treino</div>
         <div style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.6, marginBottom: 14 }}>
-          Configure seu perfil, crie sua primeira rotina de treino e deixe a IA personalizar seu plano.
+          Deixe a inteligência artificial montar uma rotina completa com base nos seus objetivos.
         </div>
-        <button style={{ ...styles.btn, padding: "10px", fontSize: 12 }} onClick={() => onNav("record")}>⚡ CRIAR MINHA ROTINA</button>
-      </div>
-
-      <div style={styles.sectionTitle}>Feed de Amigos</div>
-      <div style={{ ...styles.card }}>
-        <EmptyState
-          icon="👥"
-          title="Nenhum amigo ainda"
-          subtitle="Adicione amigos para ver as atividades deles aqui e se motivar juntos."
-          btnLabel="ADICIONAR AMIGOS"
-        />
-      </div>
-
-      <div style={styles.sectionTitle}>Suas Atividades</div>
-      <div style={styles.card}>
-        <EmptyState
-          icon="🏃"
-          title="Nenhuma atividade registrada"
-          subtitle="Grave sua primeira corrida, caminhada ou treino de força para aparecer aqui."
-          btnLabel="GRAVAR ATIVIDADE"
-          onBtn={() => onNav("record")}
-        />
+        <button style={{ ...styles.btn, padding: "10px", fontSize: 12 }} onClick={() => onNav("record")}>
+          ⚡ CRIAR MINHA ROTINA
+        </button>
       </div>
     </div>
   );
@@ -681,7 +679,7 @@ function NutritionScreen() {
 }
 
 function RecordScreen() {
-  const [tab, setTab] = useState("gerar"); // "gerar" | "salvas"
+  const [tab, setTab] = useState("gerar");
   const [goal, setGoal] = useState("Perda de Gordura");
   const [freq, setFreq] = useState("3");
   const [loading, setLoading] = useState(false);
@@ -695,21 +693,16 @@ function RecordScreen() {
   const [expandedRoutine, setExpandedRoutine] = useState(null);
   const [expandedRoutineDay, setExpandedRoutineDay] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
-  // Modal de conclusão de treino
-  const [completeModal, setCompleteModal] = useState(null); // { routineId, dayName, kcalEstimate, durationMin }
+  const [completeModal, setCompleteModal] = useState(null);
   const [logKcal, setLogKcal] = useState("");
   const [loggingWorkout, setLoggingWorkout] = useState(false);
-  const [logSuccess, setLogSuccess] = useState(null); // dayKey que acabou de ser concluído
+  const [logSuccess, setLogSuccess] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [editedPlan, setEditedPlan] = useState(null);
   const [availableExercises, setAvailableExercises] = useState([]);
-  // editingCell: { dayIdx, exIdx, field } — qual célula está em edição inline
   const [editingCell, setEditingCell] = useState(null);
-  // substituição: { dayIdx, exIdx } — qual exercício está sendo substituído
   const [replacingEx, setReplacingEx] = useState(null);
-  // aba ativa no painel de substituição: "banco" | "custom"
   const [replaceTab, setReplaceTab] = useState("banco");
-  // formulário para criar exercício customizado
   const [customExForm, setCustomExForm] = useState({ name: "", sets: "3", reps: "12", description: "" });
 
   const goals = ["Perda de Gordura", "Musculação"];
@@ -732,7 +725,7 @@ function RecordScreen() {
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Erro ao gerar plano."); return; }
       setPlan(data.plan);
-      setEditedPlan(JSON.parse(JSON.stringify(data.plan))); // deep clone editável
+      setEditedPlan(JSON.parse(JSON.stringify(data.plan)));
       setAvailableExercises(data.available_exercises || []);
       setEditMode(false);
       setExpandedDay(0);
@@ -743,7 +736,6 @@ function RecordScreen() {
     }
   }
 
-  // Helpers de edição do plano
   function updateExerciseField(dayIdx, exIdx, field, value) {
     setEditedPlan(prev => {
       const next = JSON.parse(JSON.stringify(prev));
@@ -844,7 +836,6 @@ function RecordScreen() {
         setError(data.error || "Erro ao salvar rotina.");
         return;
       }
-      // Persiste edições no plano original também
       if (editMode) setPlan(JSON.parse(JSON.stringify(editedPlan)));
       setEditMode(false);
       setSaveSuccess(true);
@@ -864,9 +855,8 @@ function RecordScreen() {
       });
       const data = await res.json();
       if (res.ok) setSavedRoutines(data.routines || []);
-    } catch (e) {
-      // silently fail
-    } finally {
+    } catch (e) {}
+    finally {
       setLoadingRoutines(false);
     }
   }
@@ -882,7 +872,7 @@ function RecordScreen() {
         setSavedRoutines(prev => prev.filter(r => r.id !== id));
         if (expandedRoutine === id) setExpandedRoutine(null);
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) {}
     finally { setDeletingId(null); }
   }
 
@@ -913,8 +903,6 @@ function RecordScreen() {
     }
   }
 
-  // Carrega rotinas ao entrar na aba
-  const prevTab = useState(tab)[0];
   function handleTabChange(t) {
     setTab(t);
     if (t === "salvas") loadSavedRoutines();
@@ -922,14 +910,12 @@ function RecordScreen() {
 
   return (
     <div style={styles.screen}>
-      {/* Header */}
       <div style={{ padding: "20px 20px 0" }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.accent, letterSpacing: 2, marginBottom: 4 }}>✦ ELITE ROUTINE ENGINE</div>
         <div style={{ fontSize: 28, fontWeight: 900, lineHeight: 1.1 }}>Desenhe sua<br />Performance.</div>
         <div style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 8 }}>Gere planos com IA e salve suas rotinas.</div>
       </div>
 
-      {/* Tabs */}
       <div style={{ display: "flex", gap: 0, margin: "16px 16px 0", background: COLORS.surface2, borderRadius: 10, padding: 4 }}>
         {[["gerar", "⚡ Gerar Plano"], ["salvas", "🗓 Minhas Rotinas"]].map(([id, lbl]) => (
           <button key={id} onClick={() => handleTabChange(id)} style={{
@@ -941,7 +927,6 @@ function RecordScreen() {
         ))}
       </div>
 
-      {/* ── TAB: GERAR ── */}
       {tab === "gerar" && (
         <>
           <div style={styles.card}>
@@ -992,10 +977,8 @@ function RecordScreen() {
             </button>
           </div>
 
-          {/* Plano gerado */}
           {activePlan && (
             <>
-              {/* Resumo do plano + toggle edição */}
               <div style={{ ...styles.card, borderColor: COLORS.accent + "55", background: COLORS.accent + "08" }}>
                 <div style={{ ...styles.row, marginBottom: 10 }}>
                   <div style={{ flex: 1, marginRight: 8 }}>
@@ -1048,10 +1031,8 @@ function RecordScreen() {
                 )}
               </div>
 
-              {/* Dias do plano */}
               {activePlan.days?.map((day, idx) => (
                 <div key={idx} style={{ ...styles.card, padding: 0, overflow: "hidden" }}>
-                  {/* Cabeçalho do dia */}
                   <div
                     onClick={() => !editMode && setExpandedDay(expandedDay === idx ? null : idx)}
                     style={{ ...styles.row, padding: "14px 16px", cursor: editMode ? "default" : "pointer" }}
@@ -1084,13 +1065,10 @@ function RecordScreen() {
                     )}
                   </div>
 
-                  {/* Lista de exercícios — sempre visível no modo edição */}
                   {(editMode || expandedDay === idx) && (
                     <div style={{ borderTop: `1px solid ${COLORS.border}`, padding: editMode ? "8px 12px" : "12px 16px" }}>
                       {day.exercises.map((ex, j) => (
                         <div key={j} style={{ padding: "10px 0", borderBottom: j < day.exercises.length - 1 ? `1px solid ${COLORS.border}` : "none" }}>
-
-                          {/* VIEW MODE */}
                           {!editMode && (
                             <>
                               <div style={{ ...styles.row }}>
@@ -1105,29 +1083,25 @@ function RecordScreen() {
                             </>
                           )}
 
-                          {/* EDIT MODE */}
                           {editMode && (
                             <div style={{ background: COLORS.surface2, borderRadius: 8, padding: "10px 12px" }}>
-                              {/* Nome / Substituição */}
                               {replacingEx && replacingEx.dayIdx === idx && replacingEx.exIdx === j ? (
                                 <div>
-                                  {/* Cabeçalho com abas */}
                                   <div style={{ ...styles.row, marginBottom: 10 }}>
                                     <div style={{ fontSize: 11, color: COLORS.warning, fontWeight: 700, letterSpacing: 1 }}>SUBSTITUIR POR:</div>
                                     <div style={{ display: "flex", gap: 4 }}>
-                                      {["banco", "custom"].map(tab => (
+                                      {["banco", "custom"].map(t => (
                                         <button
-                                          key={tab}
-                                          onClick={() => setReplaceTab(tab)}
-                                          style={{ background: replaceTab === tab ? COLORS.accent : COLORS.surface3, border: `1px solid ${replaceTab === tab ? COLORS.accent : COLORS.border}`, color: replaceTab === tab ? "#fff" : COLORS.textMuted, borderRadius: 5, padding: "3px 9px", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1 }}
+                                          key={t}
+                                          onClick={() => setReplaceTab(t)}
+                                          style={{ background: replaceTab === t ? COLORS.accent : COLORS.surface3, border: `1px solid ${replaceTab === t ? COLORS.accent : COLORS.border}`, color: replaceTab === t ? "#fff" : COLORS.textMuted, borderRadius: 5, padding: "3px 9px", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1 }}
                                         >
-                                          {tab === "banco" ? "DO BANCO" : "✦ CRIAR NOVO"}
+                                          {t === "banco" ? "DO BANCO" : "✦ CRIAR NOVO"}
                                         </button>
                                       ))}
                                     </div>
                                   </div>
 
-                                  {/* Aba: Do banco */}
                                   {replaceTab === "banco" && (
                                     <div style={{ maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
                                       {availableExercises.filter(e => e.name !== ex.name).map(e => (
@@ -1143,7 +1117,6 @@ function RecordScreen() {
                                     </div>
                                   )}
 
-                                  {/* Aba: Criar novo */}
                                   {replaceTab === "custom" && (
                                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                                       <div>
@@ -1215,7 +1188,6 @@ function RecordScreen() {
                                     </div>
                                   </div>
 
-                                  {/* Séries e Reps inline */}
                                   <div style={{ display: "flex", gap: 8 }}>
                                     <div style={{ flex: 1 }}>
                                       <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 3 }}>SÉRIES</div>
@@ -1237,7 +1209,6 @@ function RecordScreen() {
                                     </div>
                                   </div>
 
-                                  {/* Descrição */}
                                   <div style={{ marginTop: 8 }}>
                                     <div style={{ fontSize: 10, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 3 }}>DESCRIÇÃO</div>
                                     <textarea
@@ -1254,7 +1225,6 @@ function RecordScreen() {
                         </div>
                       ))}
 
-                      {/* Botão adicionar exercício (só no modo edição) */}
                       {editMode && (
                         <button
                           onClick={() => addExercise(idx)}
@@ -1266,7 +1236,6 @@ function RecordScreen() {
                 </div>
               ))}
 
-              {/* Botões de ação */}
               <div style={{ padding: "4px 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
                 {saveSuccess ? (
                   <div style={{ ...styles.btn, background: "#4caf50", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, cursor: "default" }}>
@@ -1287,7 +1256,6 @@ function RecordScreen() {
         </>
       )}
 
-      {/* ── TAB: MINHAS ROTINAS ── */}
       {tab === "salvas" && (
         <>
           {loadingRoutines ? (
@@ -1312,7 +1280,6 @@ function RecordScreen() {
 
               return (
                 <div key={routine.id} style={{ ...styles.card, padding: 0, overflow: "hidden" }}>
-                  {/* Cabeçalho da rotina */}
                   <div style={{ ...styles.row, padding: "14px 16px", cursor: "pointer" }} onClick={() => { setExpandedRoutine(isExpanded ? null : routine.id); setExpandedRoutineDay(null); }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 15, fontWeight: 800 }}>{routine.name}</div>
@@ -1332,10 +1299,8 @@ function RecordScreen() {
                     </div>
                   </div>
 
-                  {/* Conteúdo expandido */}
                   {isExpanded && (
                     <div style={{ borderTop: `1px solid ${COLORS.border}` }}>
-                      {/* Stats rápidos se tiver plan_data */}
                       {planData && (
                         <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${COLORS.border}` }}>
                           {[
@@ -1351,7 +1316,6 @@ function RecordScreen() {
                         </div>
                       )}
 
-                      {/* Treinos da rotina (usando plan_data se disponível) */}
                       {planData?.days ? (
                         planData.days.map((day, idx) => (
                           <div key={idx} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
@@ -1377,9 +1341,8 @@ function RecordScreen() {
                                       <div style={{ fontSize: 13, fontWeight: 700 }}>{ex.name}</div>
                                       <span style={{ ...styles.badge(COLORS.accent), fontSize: 10 }}>{ex.sets}x{ex.reps}</span>
                                     </div>
-
                                     {ex.description && (
-                                      <p style={{ fontSize: "12px", color: COLORS.textSecondary, marginTop: "4px", marginBotton: 0, lineHeight: "1.4" }}>
+                                      <p style={{ fontSize: "12px", color: COLORS.textSecondary, marginTop: "4px", marginBottom: 0, lineHeight: "1.4" }}>
                                         {ex.description}
                                       </p>
                                     )}
@@ -1387,7 +1350,6 @@ function RecordScreen() {
                                   </div>
                                 ))}
 
-                                {/* Botão concluir treino */}
                                 {logSuccess === `${routine.id}-${day.day}` ? (
                                   <div style={{ marginTop: 12, background: "#4caf5022", border: "1px solid #4caf5055", borderRadius: 8, padding: "10px 14px", fontSize: 13, fontWeight: 700, color: "#4caf50", textAlign: "center" }}>
                                     ✓ Treino registrado!
@@ -1405,7 +1367,6 @@ function RecordScreen() {
                           </div>
                         ))
                       ) : (
-                        // Fallback: exibe exercícios da routine_exercises se não houver plan_data
                         routine.routine_exercises?.length > 0 && (
                           <div style={{ padding: "12px 16px" }}>
                             {routine.routine_exercises.map((ex, j) => (
@@ -1435,7 +1396,6 @@ function RecordScreen() {
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
-      {/* Modal: Confirmar conclusao de treino */}
       {completeModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 999, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
           onClick={() => { setCompleteModal(null); setLogKcal(""); }}>
@@ -1511,7 +1471,7 @@ function ProgressScreen() {
 
   const weeklyKcal  = stats?.weekly_kcal || Array(7).fill(0);
   const maxKcal     = Math.max(...weeklyKcal, 1);
-  const todayDowIdx = (new Date().getDay() + 6) % 7; // 0=seg
+  const todayDowIdx = (new Date().getDay() + 6) % 7;
 
   return (
     <div style={styles.screen}>
@@ -1521,7 +1481,6 @@ function ProgressScreen() {
         <div style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 6 }}>Acompanhe sua evolução conforme você treina.</div>
       </div>
 
-      {/* Cards de totais */}
       <div style={{ display: "flex", gap: 12, padding: "12px 16px 0" }}>
         {[
           [loadingStats ? "—" : stats?.total_workouts ?? 0,  "TREINOS TOTAIS", "realizados"],
@@ -1536,7 +1495,6 @@ function ProgressScreen() {
         ))}
       </div>
 
-      {/* Score de consistência */}
       <div style={styles.card}>
         <div style={styles.label}>Score de Consistência <span style={{ color: COLORS.textMuted, fontWeight: 400 }}>(últimos 30 dias)</span></div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
@@ -1556,7 +1514,6 @@ function ProgressScreen() {
         <ProgressBar value={stats?.consistency_score ?? 0} max={100} />
       </div>
 
-      {/* Gráfico semanal */}
       <div style={styles.card}>
         <div style={{ ...styles.row, marginBottom: 16 }}>
           <div style={styles.label}>Atividade Semanal</div>
@@ -1585,7 +1542,6 @@ function ProgressScreen() {
         )}
       </div>
 
-      {/* Histórico recente */}
       <div style={styles.card}>
         <div style={{ ...styles.row, marginBottom: 12 }}>
           <div style={styles.label}>Últimos Treinos</div>
@@ -1626,46 +1582,43 @@ function EditProfileScreen({ user, onSave, onBack }) {
   });
   const [saved, setSaved] = useState(false);
 
-  const objetivos = [
-    "Perda de Gordura",
-    "Musculação",
-  ];
+  const objetivos = ["Perda de Gordura", "Musculação"];
 
-async function handleSave() {
-  if (!form.name.trim()) return;
+  async function handleSave() {
+    if (!form.name.trim()) return;
 
-  const token = localStorage.getItem("accessToken");
+    const token = localStorage.getItem("accessToken");
 
-  try {
-    const res = await fetch(`${process.env.REACT_APP_API_URL}/profiles`, {
-      method: "PATCH",           // ou "PUT", dependendo da sua API
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        name: form.name,
-        idade: form.idade,
-        peso: form.peso,
-        altura: form.altura,
-        objetivo: form.objetivo,
-      }),
-    });
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/profiles`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: form.name,
+          idade: form.idade,
+          peso: form.peso,
+          altura: form.altura,
+          objetivo: form.objetivo,
+        }),
+      });
 
-    if (!res.ok) {
-      const data = await res.json();
-      alert(data.error || "Erro ao salvar perfil.");
-      return;
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Erro ao salvar perfil.");
+        return;
+      }
+
+      onSave(form);
+      setSaved(true);
+      setTimeout(() => { setSaved(false); onBack(); }, 900);
+
+    } catch (e) {
+      alert("Não foi possível conectar ao servidor.");
     }
-
-    onSave(form);   // atualiza o estado local só após confirmar no banco
-    setSaved(true);
-    setTimeout(() => { setSaved(false); onBack(); }, 900);
-
-  } catch (e) {
-    alert("Não foi possível conectar ao servidor.");
   }
-}
 
   return (
     <div style={{ ...styles.screen, paddingBottom: 100 }}>
@@ -1674,7 +1627,6 @@ async function handleSave() {
         <div style={{ fontSize: 20, fontWeight: 900 }}>Editar Perfil</div>
       </div>
 
-      {/* Avatar */}
       <div style={{ textAlign: "center", padding: "16px 0 8px" }}>
         <div style={{ width: 80, height: 80, borderRadius: 16, background: COLORS.surface2, border: `2px dashed ${COLORS.border}`, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 900, color: COLORS.accent, position: "relative", cursor: "pointer" }}>
           {form.name ? form.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "📷"}
@@ -1683,7 +1635,6 @@ async function handleSave() {
         <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 8 }}>Toque para alterar a foto</div>
       </div>
 
-      {/* Informações pessoais */}
       <div style={styles.card}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: COLORS.accent, textTransform: "uppercase", marginBottom: 14 }}>Informações Pessoais</div>
 
@@ -1705,7 +1656,6 @@ async function handleSave() {
         <input style={styles.input} value={form.altura} onChange={e => setForm({ ...form, altura: e.target.value.replace(/\D/g, "") })} placeholder="cm" type="text" inputMode="numeric" maxLength={3} />
       </div>
 
-      {/* Objetivos */}
       <div style={styles.card}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: COLORS.accent, textTransform: "uppercase", marginBottom: 14 }}>Objetivo Principal</div>
         {objetivos.map(obj => (
@@ -1717,7 +1667,6 @@ async function handleSave() {
         ))}
       </div>
 
-      {/* Resumo preenchido */}
       {(form.peso || form.altura || form.idade) && (
         <div style={{ ...styles.card, borderColor: COLORS.accent + "44", background: COLORS.accent + "0d" }}>
           <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 10 }}>RESUMO DO PERFIL</div>
@@ -1773,7 +1722,7 @@ function ProfileScreen({ onLogout, userName, currentUser, onUpdateUser }) {
       )}
 
       <div style={{ display: "flex", gap: 12, padding: "0 16px" }}>
-        {[["0", "ATIVIDADES"], ["0", "KM"], ["0", "SEGUIDORES"]].map(([v, l]) => (
+        {[["0", "ATIVIDADES"], ["0", "TREINOS"], ["0", "CONQUISTAS"]].map(([v, l]) => (
           <div key={l} style={{ ...styles.card, flex: 1, margin: 0, textAlign: "center" }}>
             <div style={{ fontSize: 24, fontWeight: 900, color: COLORS.textMuted }}>{v}</div>
             <div style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 1 }}>{l}</div>
@@ -1811,12 +1760,12 @@ export default function App() {
   const [screen, setScreen] = useState("login");
   const [currentUser, setCurrentUser] = useState(null);
 
-  const mainScreens = ["feed", "nutrition", "record", "progress", "profile"];
+  const mainScreens = ["home", "nutrition", "record", "progress", "profile"];
   const isMain = mainScreens.includes(screen);
 
   function handleLogin(user) {
     setCurrentUser(user);
-    setScreen("feed");
+    setScreen("home");
   }
 
   function handleLogout() {
@@ -1831,7 +1780,7 @@ export default function App() {
   const navItems = [
     { id: "record", label: "Rotina", icon: "🗓" },
     { id: "nutrition", label: "Nutrição", icon: "🥗" },
-    { id: "feed", label: "Início", icon: "🏠" },
+    { id: "home", label: "Início", icon: "🏠" },
     { id: "progress", label: "Progresso", icon: "📊" },
     { id: "profile", label: "Perfil", icon: "👤" },
   ];
@@ -1861,13 +1810,13 @@ export default function App() {
         </div>
       )}
 
-      {screen === "login" && <LoginScreen onLogin={handleLogin} onNav={setScreen} />}
+      {screen === "login"    && <LoginScreen onLogin={handleLogin} onNav={setScreen} />}
       {screen === "register" && <RegisterScreen onLogin={handleLogin} onNav={setScreen} />}
-      {screen === "feed" && <FeedScreen onNav={setScreen} />}
+      {screen === "home"     && <HomeScreen onNav={setScreen} currentUser={currentUser} />}
       {screen === "nutrition" && <NutritionScreen />}
-      {screen === "record" && <RecordScreen />}
+      {screen === "record"   && <RecordScreen />}
       {screen === "progress" && <ProgressScreen />}
-      {screen === "profile" && <ProfileScreen onLogout={handleLogout} userName={currentUser?.name || ""} currentUser={currentUser} onUpdateUser={handleUpdateUser} />}
+      {screen === "profile"  && <ProfileScreen onLogout={handleLogout} userName={currentUser?.name || ""} currentUser={currentUser} onUpdateUser={handleUpdateUser} />}
 
       {isMain && (
         <nav style={styles.bottomNav}>
