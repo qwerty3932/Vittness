@@ -1815,7 +1815,6 @@ export default function App() {
                 {currentUser.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)}
               </div>
             )}
-            <button style={styles.iconBtn}>🔔</button>
           </div>
         </div>
       )}
