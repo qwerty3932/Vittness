@@ -133,6 +133,29 @@ Responda APENAS com um JSON válido, sem texto extra, sem markdown, sem explica�
       return res.status(500).json({ error: "Erro ao processar resposta da IA. Tente novamente." });
     }
 
+    // 6a. Recalcula as calorias com base no MET real de cada exercício (em vez de confiar na estimativa da IA)
+    const metByName = {};
+    exercises.forEach(ex => {
+      metByName[ex.name.trim().toLowerCase()] = Number(ex.met) > 0 ? Number(ex.met) : 5; // fallback MET moderado
+    });
+    
+    const weightKg = Number(profile?.peso) > 0 ? Number(profile.peso) : 70; // fallback se o usuário não informou peso
+    
+    if (Array.isArray(plan.days)) {
+      plan.days.forEach(day => {
+        const mets = (day.exercises || [])
+          .map(ex => metByName[(ex.name || "").trim().toLowerCase()])
+          .filter(Boolean);
+    
+        const avgMet = mets.length > 0 ? mets.reduce((a, b) => a + b, 0) / mets.length : 5;
+        const duration = Number(day.duration_min) > 0 ? Number(day.duration_min) : 45;
+    
+        const kcalPerMin = (avgMet * 3.5 * weightKg) / 200;
+        day.kcal_estimate = Math.round(kcalPerMin * duration);
+      });
+    
+      plan.weekly_kcal_estimate = plan.days.reduce((sum, d) => sum + (Number(d.kcal_estimate) || 0), 0);
+    }
     // 7. Salva o plano gerado no Supabase
     const { data: savedPlan, error: saveError } = await supabase
       .from("ai_plans")
