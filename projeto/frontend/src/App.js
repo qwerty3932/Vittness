@@ -1858,7 +1858,14 @@ function EditProfileScreen({ user, onSave, onBack }) {
         <button onClick={onBack} style={{ background: "none", border: "none", color: COLORS.accent, fontSize: 22, cursor: "pointer", padding: 0, lineHeight: 1 }}>←</button>
         <div style={{ fontSize: 20, fontWeight: 900 }}>Editar Perfil</div>
       </div>
-  
+
+     <div style={{ textAlign: "center", padding: "16px 0 8px" }}>
+        <div style={{ width: 80, height: 80, borderRadius: 16, background: COLORS.surface2, border: `2px dashed ${COLORS.border}`, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 900, color: COLORS.accent, position: "relative", cursor: "pointer" }}>
+          {form.name ? form.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "📷"}
+          <div style={{ position: "absolute", bottom: -4, right: -4, background: COLORS.accent, borderRadius: "50%", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#000" }}>📷</div>
+        </div>
+      </div>
+
       <div style={styles.card}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: COLORS.accent, textTransform: "uppercase", marginBottom: 14 }}>Informações Pessoais</div>
 
