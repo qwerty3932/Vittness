@@ -1919,6 +1919,154 @@ function EditProfileScreen({ user, onSave, onBack }) {
   );
 }
 
+function AchievementsSection() {
+  const API   = process.env.REACT_APP_API_URL;
+  const token = () => localStorage.getItem("accessToken");
+
+  const [achievements, setAchievements] = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState("");
+
+  useEffect(() => { fetchAchievements(); }, []);
+
+  async function fetchAchievements() {
+    setLoading(true);
+    setError("");
+    try {
+      const res  = await fetch(`${API}/achievements`, {
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Erro ao carregar conquistas."); return; }
+      setAchievements(data.achievements || []);
+    } catch (e) {
+      setError("Não foi possível carregar as conquistas.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const unlocked = achievements.filter(a => a.unlocked_at);
+  const locked   = achievements.filter(a => !a.unlocked_at);
+  const sorted   = [...unlocked, ...locked];
+
+  if (loading) {
+    return (
+      <div style={styles.card}>
+        <div style={styles.label}>Conquistas</div>
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          {[1, 2, 3].map(i => (
+            <div key={i} style={{ flex: 1, height: 80, background: COLORS.surface3, borderRadius: 8 }} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ ...styles.card, borderColor: COLORS.danger + "44", background: COLORS.danger + "0d" }}>
+        <div style={{ fontSize: 12, color: COLORS.danger }}>⚠ {error}</div>
+      </div>
+    );
+  }
+
+  if (achievements.length === 0) {
+    return (
+      <div style={styles.card}>
+        <div style={styles.label}>Conquistas</div>
+        <EmptyState
+          icon="🏆"
+          title="Nenhuma conquista ainda"
+          subtitle="Continue treinando para desbloquear conquistas."
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ ...styles.row, padding: "16px 20px 8px" }}>
+        <div style={styles.sectionTitle}>Conquistas</div>
+        <span style={{ ...styles.badge(COLORS.accent), fontSize: 11, marginRight: 20 }}>
+          {unlocked.length} / {achievements.length}
+        </span>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, padding: "0 16px" }}>
+        {sorted.map((ach) => {
+          const isUnlocked  = !!ach.unlocked_at;
+          const hasProgress = !isUnlocked && ach.progress != null && ach.goal != null;
+          const pct         = hasProgress ? Math.min(100, Math.round((ach.progress / ach.goal) * 100)) : 0;
+
+          return (
+            <div
+              key={ach.id}
+              style={{
+                background: isUnlocked ? COLORS.accent + "0d" : COLORS.surface,
+                border: `1px solid ${isUnlocked ? COLORS.accent + "55" : COLORS.border}`,
+                borderRadius: 10,
+                padding: "14px 8px 10px",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 5,
+                position: "relative",
+                opacity: isUnlocked ? 1 : 0.5,
+                filter: isUnlocked ? "none" : "grayscale(0.5)",
+              }}
+            >
+              {isUnlocked && (
+                <div style={{
+                  position: "absolute", top: -6, right: -6,
+                  width: 18, height: 18, borderRadius: "50%",
+                  background: COLORS.accent,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 10, fontWeight: 900, color: "#000",
+                }}>✓</div>
+              )}
+
+              <div style={{ fontSize: 26, lineHeight: 1 }}>{ach.icon || "🏅"}</div>
+
+              <div style={{
+                fontSize: 10, fontWeight: 800, letterSpacing: 0.5,
+                textTransform: "uppercase",
+                color: isUnlocked ? COLORS.accent : COLORS.text,
+                textAlign: "center", lineHeight: 1.3,
+              }}>
+                {ach.name}
+              </div>
+
+              {ach.description && (
+                <div style={{ fontSize: 10, color: COLORS.textMuted, textAlign: "center", lineHeight: 1.4 }}>
+                  {ach.description}
+                </div>
+              )}
+
+              {hasProgress && (
+                <>
+                  <div style={{ fontSize: 9, color: COLORS.textMuted }}>
+                    {ach.progress} / {ach.goal}
+                  </div>
+                  <div style={{ width: "100%", height: 3, background: COLORS.surface3, borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{ width: `${pct}%`, height: "100%", background: COLORS.accent, borderRadius: 2 }} />
+                  </div>
+                </>
+              )}
+
+              {isUnlocked && ach.unlocked_at && (
+                <div style={{ fontSize: 9, color: COLORS.textMuted }}>
+                  {new Date(ach.unlocked_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ProfileScreen({ onLogout, userName, currentUser, onUpdateUser }) {
   const onNav = (s) => { if (s === "login") onLogout(); };
   const [editing, setEditing] = useState(false);
@@ -1982,6 +2130,8 @@ function ProfileScreen({ onLogout, userName, currentUser, onUpdateUser }) {
         </div>
       </div>
 
+      <AchievementsSection />
+            
       <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 2 }}>
         {[["✏ Editar Perfil", "", () => setEditing(true)], ["🚪 Sair", COLORS.danger, () => onNav("login")]].map(([lbl, color, action]) => (
           <div key={lbl} onClick={action || undefined}
