@@ -901,14 +901,6 @@ function NutritionScreen() {
           <button style={{ ...styles.btnOutline, marginTop: 12, padding: "10px", fontSize: 12 }} onClick={() => setShowAddMeal(true)}>+ Adicionar Refeição</button>
         )}
       </div>
- 
-      {/* Banner IA */}
-      <div style={{ ...styles.card, borderColor: COLORS.accent + "44", background: COLORS.accent + "0d" }}>
-        <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>✦ IA E INSIGHTS</div>
-        <div style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.6 }}>
-          Complete seu perfil com peso, altura e objetivos para receber sugestões alimentares personalizadas da IA.
-        </div>
-      </div>
     </div>
   );
 }
