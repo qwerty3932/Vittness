@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import AchievementsSection from "./AchievementsSection";
 
 const COLORS = {
   bg: "#0d0d0d",
@@ -1982,8 +1981,6 @@ function ProfileScreen({ onLogout, userName, currentUser, onUpdateUser }) {
           <div style={{ fontSize: 10, color: COLORS.textMuted }}>realizados</div>
         </div>
       </div>
-
-      <AchievementsSection />
             
       <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 2 }}>
         {[["✏ Editar Perfil", "", () => setEditing(true)], ["🚪 Sair", COLORS.danger, () => onNav("login")]].map(([lbl, color, action]) => (
