@@ -934,7 +934,7 @@ function RecordScreen() {
   const [customExForm, setCustomExForm] = useState({ name: "", sets: "3", reps: "12", description: "" });
 
   const goals = ["Perda de Gordura", "Musculação"];
-  const freqs = ["3", "4", "5", "6"];
+  const freqs = ["3", "4", "5", "6", "7"];
 
   const token = () => localStorage.getItem("accessToken");
   const API = process.env.REACT_APP_API_URL;
@@ -1173,14 +1173,19 @@ function RecordScreen() {
 
           <div style={styles.card}>
             <div style={styles.label}>Frequência Semanal (dias)</div>
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              {freqs.map(f => (
-                <button key={f} onClick={() => setFreq(f)} style={{
-                  flex: 1, padding: "12px 0", borderRadius: 8, border: `1.5px solid ${freq === f ? COLORS.accent : COLORS.border}`,
-                  background: freq === f ? COLORS.accent : COLORS.surface2, color: freq === f ? "#000" : COLORS.textSecondary,
-                  fontWeight: 800, fontSize: 14, cursor: "pointer", letterSpacing: 1, fontFamily: "inherit",
-                }}>{f}x</button>
-              ))}
+            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                {freqs.map(f => (
+                  <button key={f} onClick={() => setFreq(f)} style={{
+                    flex: 1, minWidth: 56, padding: "12px 0", borderRadius: 8, border: `1.5px solid ${freq === f ? COLORS.accent : COLORS.border}`,
+                    background: freq === f ? COLORS.accent : COLORS.surface2, color: freq === f ? "#000" : COLORS.textSecondary,
+                    fontWeight: 800, fontSize: 14, cursor: "pointer", letterSpacing: 1, fontFamily: "inherit",
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+                  }}>
+                    <span>{f}x</span>
+                    {f === "7" && <span style={{ fontSize: 8, fontWeight: 600 }}>todos os dias</span>}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
