@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import AchievementsSection from "./AchievementsSection";
 
 const COLORS = {
   bg: "#0d0d0d",
