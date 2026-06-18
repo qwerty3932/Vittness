@@ -112,13 +112,15 @@ Responda APENAS com um JSON válido, sem texto extra, sem markdown, sem explica�
 
     // 5. Chama a API da Groq (Substituindo o Ollama)
     // Usamos o modelo 'llama3-8b-8192' que é equivalente ao que você usava localmente, só que voando!
+    const estimatedTokens = 800 + daysPerWeek * 500;
+    const maxTokens = Math.min(8000, estimatedTokens);
+    
     const response = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile", 
+      model: "llama-3.3-70b-versatile",
       messages: [{ role: "user", content: prompt }],
-      // Força a Groq a responder estritamente em formato JSON
       response_format: { type: "json_object" },
       temperature: 0.2,
-      max_completion_tokens: 1500
+      max_completion_tokens: maxTokens
     });
 
     // 6. Faz parse do JSON retornado pela Groq
