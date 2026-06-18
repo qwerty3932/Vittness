@@ -1185,7 +1185,6 @@ function RecordScreen() {
                     {f === "7" && <span style={{ fontSize: 8, fontWeight: 600 }}>todos os dias</span>}
                   </button>
                 ))}
-              </div>
             </div>
           </div>
 
