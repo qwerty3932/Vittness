@@ -514,34 +514,170 @@ function HomeScreen({ onNav, currentUser }) {
 }
 
 function NutritionScreen() {
-  const [water, setWater] = useState(0);
-  const waterGoal = 3.0;
-  const [meals, setMeals] = useState([]);
+  const API   = process.env.REACT_APP_API_URL;
+  const token = () => localStorage.getItem("accessToken");
+ 
+  // ─── Estado ──────────────────────────────────────────────────────────────
+  const [meals, setMeals]         = useState([]);
+  const [hydration, setHydration] = useState({ entries: [], totalL: 0 });
+  const [loading, setLoading]     = useState(true);
+  const [pageError, setPageError] = useState("");
+ 
   const [showAddMeal, setShowAddMeal] = useState(false);
-  const [mealForm, setMealForm] = useState({ name: "", kcal: "" });
-  const [mealErr, setMealErr] = useState("");
-
-  const totalKcal = meals.reduce((sum, m) => sum + (parseInt(m.kcal) || 0), 0);
-  const goalKcal = 2000;
+  const [mealForm, setMealForm]       = useState({ name: "", kcal: "", protein: "", carbs: "", fats: "", logged_at: "" });
+  const [mealErr, setMealErr]         = useState("");
+  const [savingMeal, setSavingMeal]   = useState(false);
+  const [deletingId, setDeletingId]   = useState(null);
+ 
+  const waterGoal = 3.0;
+  const goalKcal  = 2000;
+ 
+  // Data local do dispositivo no formato YYYY-MM-DD (para filtro correto por fuso)
+  const today = new Date().toLocaleDateString("en-CA"); // "2026-06-14"
+ 
+  // ─── Totais calculados a partir das refeições carregadas do banco ─────────
+  const totalKcal    = meals.reduce((s, m) => s + (Number(m.kcal)    || 0), 0);
+  const totalProtein = meals.reduce((s, m) => s + (Number(m.protein) || 0), 0);
+  const totalCarbs   = meals.reduce((s, m) => s + (Number(m.carbs)   || 0), 0);
+  const totalFats    = meals.reduce((s, m) => s + (Number(m.fats)    || 0), 0);
+  const water        = hydration.totalL;
+ 
   const macros = [
-    { name: "Proteína", cur: 0, goal: 150, color: COLORS.accent },
-    { name: "Carbos", cur: 0, goal: 250, color: COLORS.info },
-    { name: "Gorduras", cur: 0, goal: 65, color: COLORS.warning },
+    { name: "Proteína", cur: totalProtein, goal: 150, color: COLORS.accent },
+    { name: "Carbos",   cur: totalCarbs,   goal: 250, color: COLORS.info   },
+    { name: "Gorduras", cur: totalFats,    goal: 65,  color: COLORS.warning },
   ];
-
-  function handleAddMeal() {
-    if (!mealForm.name.trim()) { setMealErr("Informe o nome da refeição."); return; }
-    if (!mealForm.kcal || isNaN(mealForm.kcal) || parseInt(mealForm.kcal) <= 0) { setMealErr("Informe um valor de calorias válido."); return; }
-    setMeals(m => [...m, { name: mealForm.name.trim(), kcal: parseInt(mealForm.kcal) }]);
-    setMealForm({ name: "", kcal: "" });
-    setMealErr("");
-    setShowAddMeal(false);
+ 
+  // ─── Carregamento inicial dos dados do Supabase via API ──────────────────
+  useEffect(() => { loadData(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+ 
+  async function loadData() {
+    setLoading(true);
+    setPageError("");
+    try {
+      const headers = { Authorization: `Bearer ${token()}` };
+      const [mealsRes, hydRes] = await Promise.all([
+        fetch(`${API}/nutrition/meals?date=${today}`, { headers }),
+        fetch(`${API}/nutrition/hydration?date=${today}`, { headers }),
+      ]);
+ 
+      if (mealsRes.ok) {
+        const data = await mealsRes.json();
+        setMeals(data.meals || []);
+      } else {
+        let msg = "Erro ao carregar refeições.";
+        try { const e = await mealsRes.json(); msg = e.error || msg; } catch (_) {}
+        setPageError(msg);
+      }
+ 
+      if (hydRes.ok) {
+        const data = await hydRes.json();
+        setHydration({ entries: data.entries || [], totalL: Number(data.totalL) || 0 });
+      } else {
+        // Mostra o erro real para facilitar diagnóstico
+        let msg = `Erro ${hydRes.status} ao carregar hidratação.`;
+        try { const e = await hydRes.json(); msg = e.error || msg; } catch (_) {}
+        setPageError(prev => prev ? `${prev} | ${msg}` : msg);
+      }
+    } catch (e) {
+      setPageError("Não foi possível conectar ao servidor. Verifique sua conexão.");
+    } finally {
+      setLoading(false);
+    }
   }
-
+ 
+  // ─── Adicionar refeição → POST /nutrition/meals ───────────────────────────
+  async function handleAddMeal() {
+    const { name, kcal, protein, carbs, fats, logged_at } = mealForm;
+ 
+    if (!name.trim()) { setMealErr("Informe o nome da refeição."); return; }
+    if (!kcal || isNaN(kcal) || parseInt(kcal) <= 0) { setMealErr("Informe um valor de calorias válido."); return; }
+ 
+    setSavingMeal(true);
+    setMealErr("");
+    try {
+      const res = await fetch(`${API}/nutrition/meals`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({
+          name:      name.trim(),
+          kcal:      parseInt(kcal),
+          protein:   parseFloat(protein) || 0,
+          carbs:     parseFloat(carbs)   || 0,
+          fats:      parseFloat(fats)    || 0,
+          logged_at: logged_at || new Date().toISOString(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setMealErr(data.error || "Erro ao salvar refeição."); return; }
+ 
+      // Adiciona a refeição retornada pelo servidor (com id real do banco)
+      setMeals(prev => [...prev, data.meal]);
+      setMealForm({ name: "", kcal: "", protein: "", carbs: "", fats: "", logged_at: "" });
+      setShowAddMeal(false);
+    } catch (e) {
+      setMealErr("Erro de conexão. Tente novamente.");
+    } finally {
+      setSavingMeal(false);
+    }
+  }
+ 
+  // ─── Remover refeição → DELETE /nutrition/meals/:id ───────────────────────
+  async function handleDeleteMeal(id) {
+    setDeletingId(id);
+    try {
+      const res = await fetch(`${API}/nutrition/meals/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      if (res.ok) {
+        setMeals(prev => prev.filter(m => m.id !== id));
+      }
+    } catch (e) {
+      // falha silenciosa — a UI não muda e o usuário pode tentar novamente
+    } finally {
+      setDeletingId(null);
+    }
+  }
+ 
+  // ─── Registrar água → POST /nutrition/hydration ───────────────────────────
+  async function handleAddWater(amount_ml) {
+    try {
+      const res = await fetch(`${API}/nutrition/hydration`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({ amount_ml }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setHydration(prev => ({
+          entries: [...prev.entries, data.entry],
+          totalL:  +(prev.totalL + amount_ml / 1000).toFixed(2),
+        }));
+      } else {
+        // Erro visível: mostra no banner de erro da tela
+        setPageError(data.error || "Erro ao registrar hidratação. Verifique a conexão.");
+      }
+    } catch (e) {
+      setPageError("Não foi possível registrar a hidratação. Verifique sua conexão.");
+    }
+  }
+ 
+  // ─── Loading state ────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div style={{ ...styles.screen, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300 }}>
+        <div style={{ fontSize: 13, color: COLORS.textMuted }}>Carregando dados de nutrição…</div>
+      </div>
+    );
+  }
+ 
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div style={styles.screen}>
+      {/* Header */}
       <div style={{ padding: "16px 20px 0" }}>
-        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: COLORS.textMuted, textTransform: "uppercase", marginBottom: 4 }}>RELATÓRIO SEMANAL</div>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: COLORS.textMuted, textTransform: "uppercase", marginBottom: 4 }}>RESUMO DO DIA</div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
           {totalKcal > 0
             ? <><span style={{ fontSize: 36, fontWeight: 900, color: COLORS.accent }}>{totalKcal.toLocaleString()}</span><span style={{ fontSize: 14, color: COLORS.textMuted }}>kcal hoje</span></>
@@ -549,7 +685,16 @@ function NutritionScreen() {
           }
         </div>
       </div>
-
+ 
+      {/* Erro de carregamento */}
+      {pageError && (
+        <div style={{ margin: "12px 20px 0", padding: "10px 14px", background: COLORS.danger + "22", border: `1px solid ${COLORS.danger}44`, borderRadius: 8, fontSize: 13, color: COLORS.danger }}>
+          ⚠ {pageError}{" "}
+          <span onClick={loadData} style={{ cursor: "pointer", textDecoration: "underline", marginLeft: 6 }}>Tentar novamente</span>
+        </div>
+      )}
+ 
+      {/* Balanço Calórico */}
       <div style={styles.card}>
         <div style={styles.label}>Balanço Calórico</div>
         <div style={{ fontSize: 24, fontWeight: 800, color: totalKcal > 0 ? COLORS.accent : COLORS.textMuted }}>
@@ -561,23 +706,27 @@ function NutritionScreen() {
         }
         <ProgressBar value={totalKcal} max={goalKcal} />
       </div>
-
+ 
+      {/* Macronutrientes — calculados automaticamente das refeições salvas */}
       <div style={styles.card}>
         <div style={styles.label}>Macronutrientes</div>
         {macros.map(m => (
           <div key={m.name} style={{ marginTop: 10 }}>
             <div style={styles.row}>
               <span style={{ fontSize: 13 }}>{m.name}</span>
-              <span style={{ fontSize: 13, color: COLORS.textMuted }}>0g / {m.goal}g</span>
+              <span style={{ fontSize: 13, color: COLORS.textMuted }}>{m.cur.toFixed(1)}g / {m.goal}g</span>
             </div>
-            <ProgressBar value={0} max={m.goal} color={m.color} />
+            <ProgressBar value={m.cur} max={m.goal} color={m.color} />
           </div>
         ))}
-        <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 12 }}>
-          Registre suas refeições para acompanhar os macros.
-        </div>
+        {totalProtein === 0 && totalCarbs === 0 && totalFats === 0 && (
+          <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 12 }}>
+            Informe proteínas, carbos e gorduras ao registrar refeições para acompanhar aqui.
+          </div>
+        )}
       </div>
-
+ 
+      {/* Hidratação — persiste no banco via API */}
       <div style={styles.card}>
         <div style={{ ...styles.row, marginBottom: 12 }}>
           <div>
@@ -586,22 +735,27 @@ function NutritionScreen() {
               {water.toFixed(1)}L / {waterGoal}L
             </div>
             <div style={{ fontSize: 12, color: COLORS.textMuted }}>
-              {water === 0 ? "Registre seu primeiro copo!" : `Faltam ${(waterGoal - water).toFixed(1)}L`}
+              {water === 0
+                ? "Registre seu primeiro copo!"
+                : water >= waterGoal
+                  ? "Meta atingida! 🎉"
+                  : `Faltam ${(waterGoal - water).toFixed(1)}L`}
             </div>
           </div>
           <CircleProgress value={water} max={waterGoal} size={70} color={water > 0 ? COLORS.info : COLORS.textMuted} />
         </div>
         <ProgressBar value={water} max={waterGoal} color={COLORS.info} />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-          {[["Copo 200ml", 0.2], ["Garrafa 500ml", 0.5], ["Personalizado", 0.3]].map(([lbl, amt]) => (
-            <button key={lbl} onClick={() => setWater(w => Math.min(waterGoal, +(w + amt).toFixed(1)))}
+          {[["Copo 200ml", 200], ["Garrafa 500ml", 500], ["Garrafa 1L", 1000]].map(([lbl, ml]) => (
+            <button key={lbl} onClick={() => handleAddWater(ml)}
               style={{ background: COLORS.surface3, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: COLORS.text, cursor: "pointer", fontFamily: "inherit", flex: 1 }}>
               {lbl}
             </button>
           ))}
         </div>
       </div>
-
+ 
+      {/* Registro de Refeições — persiste no banco via API */}
       <div style={styles.card}>
         <div style={{ ...styles.row, marginBottom: 12 }}>
           <div style={styles.label}>Registro de Refeições</div>
@@ -609,7 +763,7 @@ function NutritionScreen() {
             <span style={{ fontSize: 12, fontWeight: 700, color: COLORS.accent }}>{totalKcal.toLocaleString()} kcal</span>
           )}
         </div>
-
+ 
         {meals.length === 0 ? (
           <EmptyState
             icon="🍽"
@@ -617,32 +771,46 @@ function NutritionScreen() {
             subtitle="Adicione o que você comeu hoje para calcular calorias e macros."
           />
         ) : (
-          meals.map((item, j) => (
-            <div key={j} style={{ ...styles.row, padding: "10px 0", borderBottom: `1px solid ${COLORS.border}` }}>
-              <div>
+          meals.map((item) => (
+            <div key={item.id} style={{ ...styles.row, padding: "10px 0", borderBottom: `1px solid ${COLORS.border}`, alignItems: "flex-start" }}>
+              <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>{item.name}</div>
+                {(Number(item.protein) > 0 || Number(item.carbs) > 0 || Number(item.fats) > 0) && (
+                  <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+                    P: {Number(item.protein || 0).toFixed(1)}g · C: {Number(item.carbs || 0).toFixed(1)}g · G: {Number(item.fats || 0).toFixed(1)}g
+                  </div>
+                )}
+                {item.logged_at && (
+                  <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 1 }}>
+                    {new Date(item.logged_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                  </div>
+                )}
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, paddingLeft: 8 }}>
                 <span style={{ fontSize: 14, fontWeight: 700, color: COLORS.accent }}>{item.kcal} kcal</span>
-                <span onClick={() => setMeals(m => m.filter((_, i) => i !== j))} style={{ fontSize: 16, color: COLORS.textMuted, cursor: "pointer", lineHeight: 1 }}>✕</span>
+                <span
+                  onClick={() => deletingId !== item.id && handleDeleteMeal(item.id)}
+                  style={{ fontSize: 16, color: COLORS.textMuted, cursor: deletingId === item.id ? "default" : "pointer", lineHeight: 1, opacity: deletingId === item.id ? 0.3 : 1 }}>
+                  {deletingId === item.id ? "…" : "✕"}
+                </span>
               </div>
             </div>
           ))
         )}
-
+ 
         {showAddMeal ? (
           <div style={{ marginTop: 14, background: COLORS.surface2, borderRadius: 10, padding: "14px" }}>
             <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, color: COLORS.accent, textTransform: "uppercase", marginBottom: 12 }}>Nova Refeição</div>
-
-            <label style={styles.inputLabel}>Nome da refeição</label>
+ 
+            <label style={styles.inputLabel}>Nome da refeição *</label>
             <input
               style={{ ...styles.input, borderColor: mealErr && !mealForm.name.trim() ? COLORS.danger : COLORS.border }}
-              placeholder="Ex: Frango gralhado com arroz"
+              placeholder="Ex: Frango grelhado com arroz"
               value={mealForm.name}
               onChange={e => { setMealForm(f => ({ ...f, name: e.target.value })); setMealErr(""); }}
             />
-
-            <label style={styles.inputLabel}>Calorias (kcal)</label>
+ 
+            <label style={styles.inputLabel}>Calorias (kcal) *</label>
             <input
               style={{ ...styles.input, borderColor: mealErr && (!mealForm.kcal || isNaN(mealForm.kcal)) ? COLORS.danger : COLORS.border }}
               placeholder="Ex: 450"
@@ -651,23 +819,90 @@ function NutritionScreen() {
               type="text"
               inputMode="numeric"
             />
-
+ 
+            {/* Macronutrientes */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 0 }}>
+              <div style={{ flex: 1 }}>
+                <label style={styles.inputLabel}>Proteína (g)</label>
+                <input
+                  style={styles.input}
+                  placeholder="0"
+                  value={mealForm.protein}
+                  onChange={e => setMealForm(f => ({ ...f, protein: e.target.value.replace(/[^0-9.]/g, "") }))}
+                  type="text"
+                  inputMode="decimal"
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={styles.inputLabel}>Carbos (g)</label>
+                <input
+                  style={styles.input}
+                  placeholder="0"
+                  value={mealForm.carbs}
+                  onChange={e => setMealForm(f => ({ ...f, carbs: e.target.value.replace(/[^0-9.]/g, "") }))}
+                  type="text"
+                  inputMode="decimal"
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={styles.inputLabel}>Gorduras (g)</label>
+                <input
+                  style={styles.input}
+                  placeholder="0"
+                  value={mealForm.fats}
+                  onChange={e => setMealForm(f => ({ ...f, fats: e.target.value.replace(/[^0-9.]/g, "") }))}
+                  type="text"
+                  inputMode="decimal"
+                />
+              </div>
+            </div>
+ 
+            {/* Horário */}
+            <label style={styles.inputLabel}>Horário (opcional)</label>
+            <input
+              style={styles.input}
+              type="time"
+              value={mealForm.logged_at
+                ? new Date(mealForm.logged_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false })
+                : ""}
+              onChange={e => {
+                if (e.target.value) {
+                  const [h, min] = e.target.value.split(":");
+                  const d = new Date();
+                  d.setHours(parseInt(h, 10), parseInt(min, 10), 0, 0);
+                  setMealForm(f => ({ ...f, logged_at: d.toISOString() }));
+                } else {
+                  setMealForm(f => ({ ...f, logged_at: "" }));
+                }
+              }}
+            />
+ 
             {mealErr && (
               <div style={{ fontSize: 12, color: COLORS.danger, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                 ⚠ {mealErr}
               </div>
             )}
-
+ 
             <div style={{ display: "flex", gap: 8 }}>
-              <button style={{ ...styles.btn, flex: 1, padding: "11px", fontSize: 12 }} onClick={handleAddMeal}>ADICIONAR</button>
-              <button style={{ ...styles.btnOutline, flex: 1, padding: "11px", fontSize: 12 }} onClick={() => { setShowAddMeal(false); setMealForm({ name: "", kcal: "" }); setMealErr(""); }}>CANCELAR</button>
+              <button
+                style={{ ...styles.btn, flex: 1, padding: "11px", fontSize: 12, opacity: savingMeal ? 0.6 : 1 }}
+                onClick={handleAddMeal}
+                disabled={savingMeal}>
+                {savingMeal ? "SALVANDO…" : "ADICIONAR"}
+              </button>
+              <button
+                style={{ ...styles.btnOutline, flex: 1, padding: "11px", fontSize: 12 }}
+                onClick={() => { setShowAddMeal(false); setMealForm({ name: "", kcal: "", protein: "", carbs: "", fats: "", logged_at: "" }); setMealErr(""); }}>
+                CANCELAR
+              </button>
             </div>
           </div>
         ) : (
           <button style={{ ...styles.btnOutline, marginTop: 12, padding: "10px", fontSize: 12 }} onClick={() => setShowAddMeal(true)}>+ Adicionar Refeição</button>
         )}
       </div>
-
+ 
+      {/* Banner IA */}
       <div style={{ ...styles.card, borderColor: COLORS.accent + "44", background: COLORS.accent + "0d" }}>
         <div style={{ fontSize: 11, color: COLORS.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>✦ IA E INSIGHTS</div>
         <div style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.6 }}>
@@ -677,6 +912,7 @@ function NutritionScreen() {
     </div>
   );
 }
+ 
 
 function RecordScreen() {
   const [tab, setTab] = useState("gerar");
