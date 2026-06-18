@@ -1,152 +1,256 @@
-const express = require("express");
-const { getDb } = require("../database");
+const express  = require("express");
+const supabase = require("../supabase");
 const { requireAuth } = require("../middleware/auth");
-
+ 
 const router = express.Router();
 router.use(requireAuth);
-
+ 
 // ─── REFEIÇÕES ────────────────────────────────────────────────────────────────
-
+ 
 // GET /nutrition/meals?date=YYYY-MM-DD
-router.get("/meals", (req, res, next) => {
+router.get("/meals", async (req, res, next) => {
   try {
-    const db = getDb();
+    // Usa data local enviada pelo frontend (formato YYYY-MM-DD) ou hoje em UTC
     const date = req.query.date || new Date().toISOString().slice(0, 10);
-
-    const meals = db.prepare(`
-      SELECT id, name, kcal, logged_at
-      FROM meals
-      WHERE user_id = ? AND date(logged_at) = ?
-      ORDER BY logged_at ASC
-    `).all(req.userId, date);
-
-    const totalKcal = meals.reduce((s, m) => s + m.kcal, 0);
-
-    res.json({ date, meals, totalKcal });
+ 
+    // Filtra registros do dia inteiro em UTC
+    const { data: meals, error } = await supabase
+      .from("meals")
+      .select("id, name, kcal, protein, carbs, fats, logged_at")
+      .eq("user_id", req.userId)
+      .gte("logged_at", `${date}T00:00:00.000Z`)
+      .lte("logged_at", `${date}T23:59:59.999Z`)
+      .order("logged_at", { ascending: true });
+ 
+    if (error) return res.status(500).json({ error: error.message });
+ 
+    const rows = meals || [];
+ 
+    // Totais calculados no servidor para garantir consistência
+    const totalKcal    = rows.reduce((s, m) => s + (Number(m.kcal)    || 0), 0);
+    const totalProtein = rows.reduce((s, m) => s + (Number(m.protein) || 0), 0);
+    const totalCarbs   = rows.reduce((s, m) => s + (Number(m.carbs)   || 0), 0);
+    const totalFats    = rows.reduce((s, m) => s + (Number(m.fats)    || 0), 0);
+ 
+    res.json({ date, meals: rows, totalKcal, totalProtein, totalCarbs, totalFats });
   } catch (err) {
     next(err);
   }
 });
-
+ 
 // POST /nutrition/meals
-// Body: { name, kcal, logged_at? }
-router.post("/meals", (req, res, next) => {
+// Body: { name, kcal, protein?, carbs?, fats?, logged_at? }
+router.post("/meals", async (req, res, next) => {
   try {
-    const { name, kcal, logged_at } = req.body;
-
+    const { name, kcal, protein = 0, carbs = 0, fats = 0, logged_at } = req.body;
+ 
     if (!name || !name.trim())
       return res.status(400).json({ error: "Nome da refeição é obrigatório." });
     if (!kcal || isNaN(kcal) || Number(kcal) <= 0)
       return res.status(400).json({ error: "Calorias devem ser um número positivo." });
-
-    const db = getDb();
-    const result = db.prepare(
-      "INSERT INTO meals (user_id, name, kcal, logged_at) VALUES (?, ?, ?, COALESCE(?, datetime('now')))"
-    ).run(req.userId, name.trim(), Math.round(Number(kcal)), logged_at || null);
-
-    const meal = db.prepare("SELECT * FROM meals WHERE id = ?").get(result.lastInsertRowid);
-    res.status(201).json({ message: "Refeição registrada.", meal });
+ 
+    const { data, error } = await supabase
+      .from("meals")
+      .insert({
+        user_id:   req.userId,
+        name:      name.trim(),
+        kcal:      Math.round(Number(kcal)),
+        protein:   Number(protein) || 0,
+        carbs:     Number(carbs)   || 0,
+        fats:      Number(fats)    || 0,
+        logged_at: logged_at || new Date().toISOString(),
+      })
+      .select()
+      .single();
+ 
+    if (error) return res.status(500).json({ error: error.message });
+    res.status(201).json({ message: "Refeição registrada.", meal: data });
   } catch (err) {
     next(err);
   }
 });
-
-// DELETE /nutrition/meals/:id
-router.delete("/meals/:id", (req, res, next) => {
+ 
+// PUT /nutrition/meals/:id
+// Body: { name?, kcal?, protein?, carbs?, fats?, logged_at? }
+router.put("/meals/:id", async (req, res, next) => {
   try {
-    const db = getDb();
-    const result = db.prepare(
-      "DELETE FROM meals WHERE id = ? AND user_id = ?"
-    ).run(req.params.id, req.userId);
-
-    if (result.changes === 0)
+    const { name, kcal, protein, carbs, fats, logged_at } = req.body;
+    const updates = {};
+ 
+    if (name      !== undefined) updates.name      = name.trim();
+    if (kcal      !== undefined) updates.kcal      = Math.round(Number(kcal));
+    if (protein   !== undefined) updates.protein   = Number(protein) || 0;
+    if (carbs     !== undefined) updates.carbs     = Number(carbs)   || 0;
+    if (fats      !== undefined) updates.fats      = Number(fats)    || 0;
+    if (logged_at !== undefined) updates.logged_at = logged_at;
+ 
+    if (Object.keys(updates).length === 0)
+      return res.status(400).json({ error: "Nenhum campo para atualizar." });
+ 
+    const { data, error } = await supabase
+      .from("meals")
+      .update(updates)
+      .eq("id", req.params.id)
+      .eq("user_id", req.userId)
+      .select()
+      .single();
+ 
+    if (error || !data)
       return res.status(404).json({ error: "Refeição não encontrada." });
-
+ 
+    res.json({ message: "Refeição atualizada.", meal: data });
+  } catch (err) {
+    next(err);
+  }
+});
+ 
+// DELETE /nutrition/meals/:id
+router.delete("/meals/:id", async (req, res, next) => {
+  try {
+    const { data, error } = await supabase
+      .from("meals")
+      .delete()
+      .eq("id", req.params.id)
+      .eq("user_id", req.userId)
+      .select("id")
+      .single();
+ 
+    if (error || !data)
+      return res.status(404).json({ error: "Refeição não encontrada." });
+ 
     res.json({ message: "Refeição removida." });
   } catch (err) {
     next(err);
   }
 });
-
+ 
 // GET /nutrition/meals/history?days=7
-router.get("/meals/history", (req, res, next) => {
+router.get("/meals/history", async (req, res, next) => {
   try {
-    const days = Math.min(parseInt(req.query.days) || 7, 90);
-    const db = getDb();
-
-    const rows = db.prepare(`
-      SELECT date(logged_at) AS day, SUM(kcal) AS total_kcal, COUNT(*) AS entries
-      FROM meals
-      WHERE user_id = ? AND logged_at >= datetime('now', ? || ' days')
-      GROUP BY day
-      ORDER BY day ASC
-    `).all(req.userId, `-${days}`);
-
-    res.json({ days, history: rows });
+    const days  = Math.min(parseInt(req.query.days) || 7, 90);
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+ 
+    const { data, error } = await supabase
+      .from("meals")
+      .select("kcal, protein, carbs, fats, logged_at")
+      .eq("user_id", req.userId)
+      .gte("logged_at", since)
+      .order("logged_at", { ascending: true });
+ 
+    if (error) return res.status(500).json({ error: error.message });
+ 
+    // Agrupamento por dia no servidor
+    const byDay = {};
+    (data || []).forEach(m => {
+      const day = m.logged_at.slice(0, 10);
+      if (!byDay[day]) {
+        byDay[day] = { day, total_kcal: 0, total_protein: 0, total_carbs: 0, total_fats: 0, entries: 0 };
+      }
+      byDay[day].total_kcal    += Number(m.kcal)    || 0;
+      byDay[day].total_protein += Number(m.protein) || 0;
+      byDay[day].total_carbs   += Number(m.carbs)   || 0;
+      byDay[day].total_fats    += Number(m.fats)    || 0;
+      byDay[day].entries++;
+    });
+ 
+    const history = Object.values(byDay).sort((a, b) => a.day.localeCompare(b.day));
+    res.json({ days, history });
   } catch (err) {
     next(err);
   }
 });
-
+ 
 // ─── HIDRATAÇÃO ───────────────────────────────────────────────────────────────
-
+ 
 // GET /nutrition/hydration?date=YYYY-MM-DD
-router.get("/hydration", (req, res, next) => {
+// A tabela hydration usa `created_at` (DEFAULT NOW) — não tem coluna `logged_at`.
+// O frontend envia a data local (YYYY-MM-DD) para filtrar corretamente por fuso horário.
+router.get("/hydration", async (req, res, next) => {
   try {
-    const db = getDb();
     const date = req.query.date || new Date().toISOString().slice(0, 10);
-
-    const rows = db.prepare(`
-      SELECT id, amount_ml, logged_at
-      FROM hydration
-      WHERE user_id = ? AND date(logged_at) = ?
-      ORDER BY logged_at ASC
-    `).all(req.userId, date);
-
-    const totalMl = rows.reduce((s, r) => s + r.amount_ml, 0);
-
-    res.json({ date, entries: rows, totalMl, totalL: +(totalMl / 1000).toFixed(2) });
+ 
+    // Janela UTC que cobre o dia local completo do usuário
+    // Expandimos 12h para cada lado para cobrir qualquer fuso (-12 a +14)
+    const from = new Date(`${date}T00:00:00.000Z`);
+    from.setUTCHours(from.getUTCHours() - 14); // back 14h for UTC+14 zones
+    const to   = new Date(`${date}T23:59:59.999Z`);
+    to.setUTCHours(to.getUTCHours() + 12);     // forward 12h for UTC-12 zones
+ 
+    const { data: rows, error } = await supabase
+      .from("hydration")
+      .select("id, amount_ml, logged_at")  // usa created_at, que sempre existe
+      .eq("user_id", req.userId)
+      .gte("logged_at", from.toISOString())
+      .lte("logged_at", to.toISOString())
+      .order("logged_at", { ascending: true });
+ 
+    if (error) return res.status(500).json({ error: error.message });
+ 
+    // Mapeia created_at → logged_at para manter compatibilidade com o frontend
+    const entries = rows || [];
+ 
+    const totalMl = entries.reduce((s, r) => s + (Number(r.amount_ml) || 0), 0);
+ 
+    res.json({
+      date,
+      entries,
+      totalMl,
+      totalL: +(totalMl / 1000).toFixed(2),
+    });
   } catch (err) {
     next(err);
   }
 });
-
+ 
 // POST /nutrition/hydration
 // Body: { amount_ml }
-router.post("/hydration", (req, res, next) => {
+router.post("/hydration", async (req, res, next) => {
   try {
     const { amount_ml } = req.body;
-
+ 
     if (!amount_ml || isNaN(amount_ml) || Number(amount_ml) <= 0)
       return res.status(400).json({ error: "Quantidade em ml deve ser um número positivo." });
+ 
+    const { data, error } = await supabase
+  .from("hydration")
+  .insert({
+    user_id:   req.userId,
+    amount_ml: Math.round(Number(amount_ml)),
+    logged_at: new Date().toISOString(),
+  })
+  .select("id, amount_ml, logged_at")
+  .single();
 
-    const db = getDb();
-    const result = db.prepare(
-      "INSERT INTO hydration (user_id, amount_ml) VALUES (?, ?)"
-    ).run(req.userId, Math.round(Number(amount_ml)));
+if (error) return res.status(500).json({ error: error.message });
 
-    const entry = db.prepare("SELECT * FROM hydration WHERE id = ?").get(result.lastInsertRowid);
-    res.status(201).json({ message: "Hidratação registrada.", entry });
+res.status(201).json({
+  message: "Hidratação registrada.",
+  entry: data,
+});
+
   } catch (err) {
     next(err);
   }
 });
-
+ 
 // DELETE /nutrition/hydration/:id
-router.delete("/hydration/:id", (req, res, next) => {
+router.delete("/hydration/:id", async (req, res, next) => {
   try {
-    const db = getDb();
-    const result = db.prepare(
-      "DELETE FROM hydration WHERE id = ? AND user_id = ?"
-    ).run(req.params.id, req.userId);
-
-    if (result.changes === 0)
+    const { data, error } = await supabase
+      .from("hydration")
+      .delete()
+      .eq("id", req.params.id)
+      .eq("user_id", req.userId)
+      .select("id")
+      .single();
+ 
+    if (error || !data)
       return res.status(404).json({ error: "Registro não encontrado." });
-
+ 
     res.json({ message: "Registro removido." });
   } catch (err) {
     next(err);
   }
 });
-
+ 
 module.exports = router;
